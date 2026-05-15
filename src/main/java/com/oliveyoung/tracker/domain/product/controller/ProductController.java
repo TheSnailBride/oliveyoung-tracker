@@ -11,6 +11,8 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -74,12 +76,11 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.ok(products));
     }
 
-    @GetMapping("/{id}/similar")
-    public ResponseEntity<ApiResponse<List<ProductResponse>>> getSimilar(
-            @PathVariable Long id,
-            @RequestParam(required = false, defaultValue = "") String category,
-            @RequestParam(defaultValue = "8") int size) {
-        return ResponseEntity.ok(ApiResponse.ok(productService.getSimilarProducts(id, category, size)));
+    @GetMapping("/{productId}/similar")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getSimilarProducts(
+            @PathVariable Long productId) {
+        List<ProductResponse> similarProducts = productService.getSimilarProducts(productId);
+        return ResponseEntity.ok(ApiResponse.ok(similarProducts));
     }
 
     @GetMapping("/at-lowest")
@@ -96,5 +97,31 @@ public class ProductController {
     @GetMapping("/all-for-crawler")
     public ResponseEntity<ApiResponse<List<Map<String, String>>>> getAllForCrawler() {
         return ResponseEntity.ok(ApiResponse.ok(productService.getAllProductsForCrawler()));
+    }
+
+    @PostMapping("/{id}/alert")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> toggleAlert(
+            @PathVariable Long id,
+            @RequestBody(required = false) Map<String, Integer> body,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        if (userDetails == null) {
+            throw new IllegalArgumentException("로그인이 필요합니다.");
+        }
+        Integer targetPrice = (body != null) ? body.get("targetPrice") : null;
+        Integer setPrice = productService.toggleAlert(userDetails.getUsername(), id, targetPrice);
+        
+        boolean isAlertSet = (setPrice != null);
+        return ResponseEntity.ok(ApiResponse.ok(Map.of("isAlertSet", isAlertSet, "targetPrice", setPrice != null ? setPrice : -1)));
+    }
+
+    @GetMapping("/{id}/alert")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> checkAlert(
+            @PathVariable Long id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        if (userDetails == null) {
+            return ResponseEntity.ok(ApiResponse.ok(Map.of("isAlertSet", false, "targetPrice", -1)));
+        }
+        Map<String, Object> status = productService.checkAlertStatus(userDetails.getUsername(), id);
+        return ResponseEntity.ok(ApiResponse.ok(status));
     }
 }
