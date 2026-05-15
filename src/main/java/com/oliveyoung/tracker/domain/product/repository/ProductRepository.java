@@ -21,6 +21,9 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     Page<Product> findByBrand(String brand, Pageable pageable);
 
+    // 새롭게 추가되는 메서드
+    List<Product> findTop5ByCategoryAndBrandAndIdNot(String category, String brand, Long id);
+
     @Query("SELECT p FROM Product p WHERE " +
            "(:keyword IS NULL OR p.name LIKE %:keyword% OR p.brand LIKE %:keyword%) AND " +
            "(:category IS NULL OR p.category = :category) AND " +
