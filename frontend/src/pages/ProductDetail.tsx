@@ -14,6 +14,7 @@ import {
   Legend,
   Filler
 } from 'chart.js';
+import { Bell, BellRing } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -45,29 +46,122 @@ interface PriceHistory {
   recordedAt: string;
 }
 
+interface Product {
+  id: number;
+  name: string;
+  brand: string;
+  imageUrl: string;
+  currentPrice: number;
+  originalPrice: number;
+  discountRate: number;
+  isSale: boolean;
+}
+
 function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [days, setDays] = useState(30);
+  const [isAlertSet, setIsAlertSet] = useState(false);
+  const [targetPrice, setTargetPrice] = useState<number | null>(null);
+  const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
+  const [loadingSimilar, setLoadingSimilar] = useState<boolean>(true);
 
   useEffect(() => {
     window.scrollTo(0, 0);
     const fetchData = async () => {
       try {
-        const [prodRes, historyRes] = await Promise.all([
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+        
+        const [prodRes, historyRes, alertRes] = await Promise.all([
           axios.get(`/api/products/${id}`),
-          axios.get(`/api/products/${id}/prices?days=${days}`)
+          axios.get(`/api/products/${id}/prices?days=${days}`),
+          token ? axios.get(`/api/products/${id}/alert`, { headers }) : Promise.resolve({ data: { data: { isAlertSet: false, targetPrice: -1 } } })
         ]);
         setProduct(prodRes.data.data);
         setHistory(historyRes.data.data);
+        
+        const alertData = alertRes.data.data;
+        setIsAlertSet(alertData.isAlertSet);
+        if (alertData.targetPrice && alertData.targetPrice !== -1) {
+          setTargetPrice(alertData.targetPrice);
+        } else {
+          setTargetPrice(null);
+        }
       } catch (err) {
         console.error('데이터 로딩 실패', err);
       }
     };
     fetchData();
   }, [id, days]);
+
+  useEffect(() => {
+    if (!id) return;
+    
+    const fetchSimilarProducts = async () => {
+      setLoadingSimilar(true);
+      try {
+        const response = await axios.get(`/api/v1/products/${id}/similar`);
+        if (response.data.success) {
+          setSimilarProducts(response.data.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch similar products:', error);
+      } finally {
+        setLoadingSimilar(false);
+      }
+    };
+
+    fetchSimilarProducts();
+  }, [id]);
+
+  const toggleAlert = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        alert('로그인이 필요합니다.');
+        navigate('/login');
+        return;
+      }
+
+      let reqBody = {};
+
+      if (isAlertSet) {
+        const confirmCancel = window.confirm('알림 설정을 해제하시겠습니까?');
+        if (!confirmCancel) return;
+        // targetPrice 없이 보내면 해제
+      } else {
+        const priceStr = window.prompt(`현재 가격은 ${product?.currentPrice.toLocaleString()}원 입니다.\n얼마 이하로 떨어지면 알림을 받을까요? (숫자만 입력)`, '');
+        if (priceStr === null) return; // 취소 누름
+        const parsedPrice = parseInt(priceStr.replace(/[^0-9]/g, ''));
+        if (isNaN(parsedPrice) || parsedPrice <= 0) {
+          alert('올바른 금액을 입력해주세요.');
+          return;
+        }
+        reqBody = { targetPrice: parsedPrice };
+      }
+      
+      const res = await axios.post(`/api/products/${id}/alert`, reqBody, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      const resultData = res.data.data;
+      setIsAlertSet(resultData.isAlertSet);
+      
+      if (resultData.isAlertSet) {
+        setTargetPrice(resultData.targetPrice);
+        alert(`가격이 ${resultData.targetPrice.toLocaleString()}원 이하로 내려가면 알려드릴게요!`);
+      } else {
+        setTargetPrice(null);
+        alert('알림이 해제되었습니다.');
+      }
+    } catch (err) {
+      console.error('알림 설정 실패', err);
+      alert('알림 설정 중 오류가 발생했습니다.');
+    }
+  };
 
   if (!product) return <div className="loading">불러오는 중...</div>;
 
@@ -166,14 +260,68 @@ function ProductDetail() {
         </div>
       </div>
 
-      <div className="detail-bottom-fixed">
+      {/* 비슷한 상품 추천 섹션 */}
+      {!loadingSimilar && similarProducts.length > 0 && (
+        <div className="similar-section">
+          <h2>이 브랜드의 비슷한 상품</h2>
+          <div className="similar-list">
+            {similarProducts.map((prod) => (
+              <div 
+                key={prod.id} 
+                className="similar-item"
+                onClick={() => navigate(`/product/${prod.id}`)}
+              >
+                <div className="similar-img-wrap">
+                  <img src={prod.imageUrl} alt={prod.name} />
+                </div>
+                <div className="similar-brand">{prod.brand}</div>
+                <div className="similar-name">{prod.name}</div>
+                <div className="similar-price-wrap">
+                  {prod.isSale && (
+                    <span className="similar-discount">{prod.discountRate}%</span>
+                  )}
+                  <span className="similar-price">{prod.currentPrice.toLocaleString()}원</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="detail-bottom-fixed" style={{ display: 'flex', gap: '10px' }}>
+        <button
+          onClick={toggleAlert}
+          style={{
+            flex: 1,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            flexDirection: 'column',
+            gap: '2px',
+            backgroundColor: isAlertSet ? '#f2f8f2' : '#fff',
+            color: isAlertSet ? '#3D8B37' : '#333',
+            border: `1px solid ${isAlertSet ? '#3D8B37' : '#ddd'}`,
+            borderRadius: '12px',
+            cursor: 'pointer',
+            padding: '4px'
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', fontSize: '15px' }}>
+            {isAlertSet ? <BellRing size={20} /> : <Bell size={20} />}
+            <span>{isAlertSet ? '목표가 알림 중' : '목표가 알림'}</span>
+          </div>
+          {isAlertSet && targetPrice && (
+            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>({targetPrice.toLocaleString()}원 이하)</span>
+          )}
+        </button>
         <a 
           href={product.productUrl} 
           target="_blank" 
           rel="noreferrer" 
           className="btn-buy-bottom"
+          style={{ flex: 1.5, margin: 0 }}
         >
-          올리브영 공식몰에서 확인하기
+          공식몰에서 확인
         </a>
       </div>
     </div>
