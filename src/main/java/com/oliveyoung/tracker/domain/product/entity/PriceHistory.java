@@ -41,7 +41,7 @@ public class PriceHistory {
     }
 
     public static PriceHistory of(Product product, Integer currentPrice, Integer originalPrice,
-                                   Integer discountRate, Boolean isSale) {
+                                    Integer discountRate, Boolean isSale) {
         return PriceHistory.builder()
                 .product(product)
                 .currentPrice(currentPrice)
@@ -50,5 +50,13 @@ public class PriceHistory {
                 .isSale(isSale != null ? isSale : false)
                 .recordedAt(LocalDateTime.now())
                 .build();
+    }
+
+    public void updatePrice(Integer currentPrice, Integer originalPrice, Integer discountRate, Boolean isSale) {
+        this.currentPrice = currentPrice;
+        this.originalPrice = originalPrice;
+        this.discountRate = discountRate;
+        this.isSale = isSale != null ? isSale : false;
+        this.recordedAt = LocalDateTime.now();
     }
 }

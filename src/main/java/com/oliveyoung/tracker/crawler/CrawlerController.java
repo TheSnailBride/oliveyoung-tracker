@@ -4,6 +4,7 @@ import com.oliveyoung.tracker.common.response.ApiResponse;
 import com.oliveyoung.tracker.crawler.dto.CrawledProduct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -23,13 +24,11 @@ public class CrawlerController {
     @PostMapping("/run")
     public ResponseEntity<ApiResponse<String>> runCrawler() {
         log.info("수동 크롤링 요청");
-        new Thread(() -> {
-            try {
-                crawlerScheduler.runManualCrawling();
-            } catch (Exception e) {
-                log.error("크롤링 실패: {}", e.getMessage(), e);
-            }
-        }).start();
+        boolean started = crawlerScheduler.startManualCrawling();
+        if (!started) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(ApiResponse.error("이미 크롤링이 실행 중입니다."));
+        }
         return ResponseEntity.ok(ApiResponse.ok("전체 카테고리 랭킹 크롤링이 시작되었습니다."));
     }
 

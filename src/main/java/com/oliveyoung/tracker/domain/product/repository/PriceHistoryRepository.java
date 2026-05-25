@@ -16,6 +16,9 @@ public interface PriceHistoryRepository extends JpaRepository<PriceHistory, Long
     List<PriceHistory> findByProductIdAndRecordedAtBetweenOrderByRecordedAtAsc(
             Long productId, LocalDateTime from, LocalDateTime to);
 
+    Optional<PriceHistory> findTopByProductIdAndRecordedAtBetweenOrderByCurrentPriceAscRecordedAtAsc(
+            Long productId, LocalDateTime from, LocalDateTime to);
+
     Optional<PriceHistory> findTopByProductIdOrderByRecordedAtDesc(Long productId);
 
     @Query("SELECT MIN(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = :productId")

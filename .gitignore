@@ -33,3 +33,16 @@ out/
 ### Env ###
 .env
 application-prod.yml
+
+### Local browser/test artifacts ###
+__pycache__/
+*.py[cod]
+chrome-tmp*/
+chrome-pdf/
+edge-pdf/
+pdf_images/
+tmp_pdf_images/
+debug_oliveyoung_page.html
+pdfshot.png
+portfolio_page_view.png
+portfolio_review.pdf

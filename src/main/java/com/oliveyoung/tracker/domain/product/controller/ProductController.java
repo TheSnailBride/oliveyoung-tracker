@@ -2,6 +2,8 @@ package com.oliveyoung.tracker.domain.product.controller;
 
 import com.oliveyoung.tracker.common.response.ApiResponse;
 import com.oliveyoung.tracker.domain.product.dto.PriceHistoryResponse;
+import com.oliveyoung.tracker.domain.product.dto.ProductAlertRequest;
+import com.oliveyoung.tracker.domain.product.dto.ProductAlertResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductDetailResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductResponse;
 import com.oliveyoung.tracker.domain.product.service.ProductService;
@@ -15,6 +17,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -33,11 +36,18 @@ public class ProductController {
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> searchProducts(
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) String category,
+            @RequestParam(required = false) String categories,
             @RequestParam(required = false) String brand,
             @RequestParam(required = false) Boolean isSale,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        Page<ProductResponse> products = productService.searchProducts(keyword, category, brand, isSale, pageable);
+        List<String> categoryList = categories == null || categories.isBlank()
+                ? List.of()
+                : Arrays.stream(categories.split(","))
+                        .map(String::trim)
+                        .filter(value -> !value.isBlank())
+                        .toList();
+        Page<ProductResponse> products = productService.searchProducts(keyword, category, categoryList, brand, isSale, pageable);
         return ResponseEntity.ok(ApiResponse.ok(products));
     }
 
@@ -100,28 +110,26 @@ public class ProductController {
     }
 
     @PostMapping("/{id}/alert")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> toggleAlert(
+    public ResponseEntity<ApiResponse<ProductAlertResponse>> toggleAlert(
             @PathVariable Long id,
-            @RequestBody(required = false) Map<String, Integer> body,
+            @RequestBody(required = false) ProductAlertRequest body,
             @AuthenticationPrincipal UserDetails userDetails) {
         if (userDetails == null) {
             throw new IllegalArgumentException("로그인이 필요합니다.");
         }
-        Integer targetPrice = (body != null) ? body.get("targetPrice") : null;
-        Integer setPrice = productService.toggleAlert(userDetails.getUsername(), id, targetPrice);
-        
-        boolean isAlertSet = (setPrice != null);
-        return ResponseEntity.ok(ApiResponse.ok(Map.of("isAlertSet", isAlertSet, "targetPrice", setPrice != null ? setPrice : -1)));
+        Integer targetPrice = body != null ? body.targetPrice() : null;
+        ProductAlertResponse response = productService.toggleAlert(userDetails.getUsername(), id, targetPrice);
+        return ResponseEntity.ok(ApiResponse.ok(response));
     }
 
     @GetMapping("/{id}/alert")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> checkAlert(
+    public ResponseEntity<ApiResponse<ProductAlertResponse>> checkAlert(
             @PathVariable Long id,
             @AuthenticationPrincipal UserDetails userDetails) {
         if (userDetails == null) {
-            return ResponseEntity.ok(ApiResponse.ok(Map.of("isAlertSet", false, "targetPrice", -1)));
+            return ResponseEntity.ok(ApiResponse.ok(ProductAlertResponse.cleared()));
         }
-        Map<String, Object> status = productService.checkAlertStatus(userDetails.getUsername(), id);
+        ProductAlertResponse status = productService.checkAlertStatus(userDetails.getUsername(), id);
         return ResponseEntity.ok(ApiResponse.ok(status));
     }
 }

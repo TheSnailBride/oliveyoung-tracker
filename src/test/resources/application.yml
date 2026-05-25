@@ -4,7 +4,16 @@ spring:
     driver-class-name: org.h2.Driver
     username: sa
     password:
+  cache:
+    type: simple
   jpa:
     database-platform: org.hibernate.dialect.H2Dialect
     hibernate:
       ddl-auto: create-drop
+jwt:
+  secret: your-secret-key-must-be-at-least-256-bits-long-for-hs256
+  expiration: 86400000
+kakao:
+  client-id: test-id
+  client-secret: test-secret
+  redirect-uri: http://localhost:8080/api/kakao/callback

@@ -1,8 +1,11 @@
 import json
+import logging
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scrapling import StealthyFetcher
+
+logging.getLogger('scrapling').setLevel(logging.WARNING)
 
 # Backend API Endpoints
 BASE_API_URL = "http://localhost:8080/api/crawler"
@@ -10,8 +13,11 @@ IMPORT_API_URL = f"{BASE_API_URL}/import"
 GET_PRODUCTS_API_URL = "http://localhost:8080/api/products/all-for-crawler"
 
 # Olive Young URLs
-BEST_URL = "https://www.oliveyoung.co.kr/store/main/getBestList.do"
-PRODUCT_DETAIL_URL = "https://www.oliveyoung.co.kr/store/goods/getGoodsDetail.do?goodsNo="
+BEST_URL = "https://m.oliveyoung.co.kr/m/main/getBestList.do"
+PRODUCT_DETAIL_URL = "https://m.oliveyoung.co.kr/m/goods/getGoodsDetail.do?goodsNo="
+CATEGORY_WAIT_SECONDS = 1.5
+CATEGORY_RETRY_DELAYS = [30, 30]
+CATEGORY_BLOCKED_MARKERS = ("Just a moment", "Access Denied", "Forbidden")
 
 # 사용자가 지정한 15자리 하위 카테고리 ID 목록
 TARGET_CATEGORIES = {
@@ -228,6 +234,61 @@ def parse_product_items(items, cat_name):
             pass
     return parsed
 
+def is_blocked_or_error_page(page_data):
+    status = getattr(page_data, "status", None)
+    if status in (403, 429, 503):
+        return True
+
+    body = str(getattr(page_data, "body", ""))[:2000]
+    return any(marker in body for marker in CATEGORY_BLOCKED_MARKERS)
+
+def scrape_category_page(url, cat_name, retry_empty=True):
+    last_reason = ""
+    for attempt in range(1, len(CATEGORY_RETRY_DELAYS) + 2):
+        fetch_start = time.time()
+        try:
+            page_data = StealthyFetcher.fetch(url, headless=True)
+            fetch_elapsed = time.time() - fetch_start
+        except Exception as e:
+            fetch_elapsed = time.time() - fetch_start
+            last_reason = f"exception={type(e).__name__}"
+            if attempt <= len(CATEGORY_RETRY_DELAYS):
+                delay = CATEGORY_RETRY_DELAYS[attempt - 1]
+                print(f"    Attempt {attempt} failed ({last_reason}, fetch={fetch_elapsed:.2f}s). Retrying same page in {delay}s...")
+                time.sleep(delay)
+                continue
+            return [], fetch_elapsed, 0, last_reason
+
+        time.sleep(CATEGORY_WAIT_SECONDS)
+
+        parse_start = time.time()
+        items = page_data.css("ul.cate_prd_list li")
+        products = parse_product_items(items, cat_name)
+        parse_elapsed = time.time() - parse_start
+
+        if products:
+            return products, fetch_elapsed, parse_elapsed, ""
+
+        status = getattr(page_data, "status", None)
+        blocked = is_blocked_or_error_page(page_data)
+        if status is not None and status != 200:
+            last_reason = f"status={status}"
+        elif not items:
+            last_reason = "empty-items"
+        else:
+            last_reason = "empty-products"
+
+        should_retry = blocked or (retry_empty and last_reason in ("empty-items", "empty-products"))
+        if should_retry and attempt <= len(CATEGORY_RETRY_DELAYS):
+            delay = CATEGORY_RETRY_DELAYS[attempt - 1]
+            print(f"    Attempt {attempt} blocked or empty ({last_reason}). Retrying same page in {delay}s...")
+            time.sleep(delay)
+            continue
+
+        return [], fetch_elapsed, parse_elapsed, last_reason
+
+    return [], 0, 0, last_reason
+
 def scrape_individual_product(olive_id, url):
     if not url:
         url = PRODUCT_DETAIL_URL + olive_id
@@ -277,18 +338,14 @@ def scrape_oliveyoung():
     for cat_name, cat_id in TARGET_CATEGORIES.items():
         print(f"\nCrawling Category Pages: [{cat_name}]")
         for page_idx in range(1, 20): # 최대 15페이지까지
-            url = f"https://www.oliveyoung.co.kr/store/display/getMCategoryList.do?dispCatNo={cat_id}&pageIdx={page_idx}&rowsPerPage=100"
+            url = f"https://m.oliveyoung.co.kr/m/display/getMCategoryList.do?dispCatNo={cat_id}&pageIdx={page_idx}&rowsPerPage=100"
             try:
-                page_data = StealthyFetcher.fetch(url, headless=True)
-                time.sleep(1.5) # 안전한 대기 시간
-
-                items = page_data.css("ul.cate_prd_list li")
-                if not items:
-                    print(f"  [Page {page_idx}] 상품이 더 이상 없습니다. 다음 카테고리로 넘어갑니다.")
-                    break
-
-                products = parse_product_items(items, cat_name)
+                products, fetch_elapsed, parse_elapsed, failure_reason = scrape_category_page(url, cat_name)
                 if not products:
+                    if failure_reason.startswith("status="):
+                        print(f"  [Page {page_idx}] 상품 목록 조회 실패({failure_reason}). 다음 카테고리로 넘어갑니다.")
+                    else:
+                        print(f"  [Page {page_idx}] 상품이 더 이상 없습니다. 다음 카테고리로 넘어갑니다.")
                     break
 
                 for p in products:
@@ -296,7 +353,7 @@ def scrape_oliveyoung():
                     if oid not in collected_products:
                         collected_products[oid] = p
 
-                print(f"  [Page {page_idx}] Added {len(products)} products.")
+                print(f"  [Page {page_idx}] Added {len(products)} products. fetch={fetch_elapsed:.2f}s parse={parse_elapsed:.2f}s")
 
                 # 100개를 채우지 못했다면 그 페이지가 마지막이라는 뜻 (대화 10.txt 요구사항 반영)
                 if len(products) < 100:

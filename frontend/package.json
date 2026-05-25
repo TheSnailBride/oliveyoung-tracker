@@ -7,6 +7,10 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
+    "test:notifications": "node --experimental-strip-types tests/notificationCenter.test.ts",
+    "test:product-alerts": "node --experimental-strip-types tests/productAlerts.test.ts",
+    "test:categories": "node --experimental-strip-types tests/categories.test.ts",
+    "test:products": "node --experimental-strip-types tests/products.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

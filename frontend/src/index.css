@@ -17,7 +17,7 @@ a {
 body {
   font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
   color: #111;
-  max-width: 480px;
+  max-width: 960px;
   margin: 0 auto;
   min-height: 100vh;
   background: #fff;
@@ -123,15 +123,23 @@ body {
 .scroll-card-img { width: 100%; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #f4f4f4; }
 .scroll-card-img img { width: 100%; height: 100%; object-fit: cover; }
 .scroll-card-body .card-name { font-size: 11px; margin-top: 6px; height: 32px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; color: #333; }
-.scroll-card-body .price-current { font-size: 13px; font-weight: 800; margin-top: 4px; color: #111; }
+.scroll-card-body .price-current { font-size: 13px; font-weight: 800; color: #111; }
 
-.product-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 12px; padding: 0 16px; }
+.product-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 24px 16px; padding: 0 16px; }
+.category-group-list { display: flex; gap: 8px; overflow-x: auto; padding: 0 16px 10px; scrollbar-width: none; }
+.category-group-list::-webkit-scrollbar { display: none; }
+.category-sub-list { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 16px; }
+.category-chip { flex: 0 0 auto; min-height: 32px; padding: 6px 12px; border-radius: 18px; border: 1px solid #eee; background: #fff; color: #555; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 0.2s, border-color 0.2s, color 0.2s; }
+.category-group-chip { font-size: 13px; padding: 7px 14px; }
+.category-chip.active { background: #3D8B37; border-color: #3D8B37; color: #fff; font-weight: 800; }
 .card-image { position: relative; padding-top: 100%; border-radius: 14px; overflow: hidden; background: #f4f4f4; }
 .card-image img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
 .card-body { padding: 8px 0; }
 .card-brand { font-size: 10px; color: #ff4b4b; font-weight: 700; margin-bottom: 2px; }
 .card-name { font-size: 12px; height: 34px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.4; color: #111; }
-.price-current { font-size: 15px; font-weight: 800; margin-top: 6px; color: #111; }
+.price-line { display: flex; align-items: baseline; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.price-current { font-size: 15px; font-weight: 800; color: #111; }
+.discount-inline { color: #ff4b4b; font-size: 12px; font-weight: 900; line-height: 1; }
 
 /* ===== 상세 페이지 ===== */
 .product-detail-container { padding-bottom: 80px; }
@@ -161,26 +169,122 @@ body {
 .period-btn.active { background: #3D8B37; color: #fff; border-color: #3D8B37; }
 .chart-wrap { height: 200px; width: 100%; }
 
-.bottom-actions-pc { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 480px; display: flex; height: 56px; z-index: 2000; }
+.bottom-actions-pc { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 960px; display: flex; height: 56px; z-index: 2000; }
 .btn-olive-go { flex: 1; background: #f1f3f5; color: #333; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
 .btn-alert-go { flex: 1.5; background: #111; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; gap: 6px; }
 
 /* ===== 픽스드 하단 버튼 ===== */
 .detail-bottom-fixed {
-  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); 
-  width: 100%; max-width: 480px; 
+  position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
+  width: 100%; max-width: 960px;
   padding: 16px; background: #fff; border-top: 1px solid #eee; z-index: 2000;
 }
+.detail-actions { display: flex; gap: 10px; }
+.btn-alert-bottom {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 4px;
+  background: #fff;
+  color: #333;
+  border: 1px solid #ddd;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.btn-alert-bottom.active { background: #f2f8f2; color: #3D8B37; border-color: #3D8B37; }
+.btn-alert-main { display: flex; align-items: center; gap: 6px; font-weight: 800; font-size: 15px; }
+.btn-alert-sub { font-size: 11px; font-weight: 700; }
 .btn-buy-bottom {
   display: flex; justify-content: center; align-items: center;
   width: 100%; height: 50px; background: #3D8B37; color: #fff !important;
   font-weight: 800; font-size: 16px; border-radius: 12px; text-decoration: none;
 }
+.detail-actions .btn-buy-bottom { flex: 1.5; width: auto; margin: 0; }
+.detail-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 90px;
+  transform: translateX(-50%);
+  z-index: 2100;
+  width: calc(100% - 32px);
+  max-width: 520px;
+  padding: 12px 14px;
+  background: #111;
+  color: #fff;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+}
+.alert-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2200;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+.alert-modal {
+  width: 100%;
+  max-width: 520px;
+  background: #fff;
+  border-radius: 12px 12px 0 0;
+  padding: 18px 16px 16px;
+}
+.alert-modal-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.alert-modal-header h2 { margin: 0; font-size: 18px; font-weight: 800; }
+.alert-modal-close {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  background: #f4f4f4;
+  border-radius: 50%;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.alert-modal-body { display: flex; flex-direction: column; gap: 12px; }
+.alert-current-price { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: #666; }
+.alert-current-price strong { color: #111; font-size: 16px; }
+.alert-price-field { display: flex; flex-direction: column; gap: 8px; font-size: 13px; font-weight: 700; color: #333; }
+.alert-price-field input {
+  height: 46px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 0 12px;
+  font-size: 16px;
+  font-weight: 800;
+}
+.alert-form-error { margin: 0; color: #ff4b4b; font-size: 12px; font-weight: 700; }
+.alert-modal-actions { display: flex; gap: 8px; margin-top: 16px; }
+.alert-clear-btn,
+.alert-save-btn {
+  height: 46px;
+  border: 0;
+  border-radius: 8px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.alert-clear-btn { flex: 1; background: #f4f4f4; color: #333; }
+.alert-save-btn { flex: 1.6; background: #3D8B37; color: #fff; }
+.alert-clear-btn:disabled,
+.alert-save-btn:disabled,
+.alert-modal-close:disabled { opacity: 0.55; cursor: default; }
 
 /* ===== 알림 페이지 (Alerts) ===== */
 .alerts-page { padding: 0 0 40px; }
 .alerts-header { padding: 20px 16px 10px; border-bottom: 1px solid #eee; }
 .alerts-header .title { font-size: 20px; font-weight: 800; margin: 0; }
+.alerts-error { margin: 12px 16px 0; padding: 10px 12px; background: #fff4f4; color: #d92d20; border-radius: 8px; font-size: 12px; font-weight: 700; }
+.alerts-section { padding-top: 14px; }
+.alerts-section + .alerts-section { border-top: 8px solid #f6f6f6; }
+.alerts-section-title { margin: 0; padding: 0 16px 10px; font-size: 14px; font-weight: 800; color: #111; }
 .empty-alerts { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 60vh; text-align: center; }
 .empty-alerts .icon { font-size: 48px; margin-bottom: 16px; opacity: 0.5; }
 .empty-alerts .main-msg { font-size: 16px; font-weight: 700; color: #111; margin-bottom: 8px; }
@@ -189,15 +293,34 @@ body {
 .alert-item { display: flex; padding: 16px; gap: 14px; border-bottom: 1px solid #f8f8f8; cursor: pointer; position: relative; background: #fff; transition: background 0.2s; }
 .alert-item:hover { background: #fdfdfd; }
 .alert-item.read { opacity: 0.7; }
+.active-alert-item { background: #fbfdfb; }
 .item-img { width: 64px; height: 64px; border-radius: 10px; overflow: hidden; background: #f4f4f4; flex-shrink: 0; }
 .item-img img { width: 100%; height: 100%; object-fit: cover; }
 .item-content { flex: 1; min-width: 0; }
 .item-time { font-size: 11px; color: #999; margin-bottom: 4px; }
 .item-title { font-size: 13px; font-weight: 700; color: #111; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .item-msg { font-size: 12px; color: #3D8B37; font-weight: 600; margin-bottom: 6px; }
+.active-alert-msg { color: #4f6f4b; }
 .item-price { font-size: 12px; color: #666; }
 .item-price .price { font-weight: 800; color: #111; }
+.price-divider { display: inline-block; margin-left: 10px; color: #777; }
 .unread-dot { position: absolute; top: 20px; right: 16px; width: 6px; height: 6px; background: #ff4b4b; border-radius: 50%; }
+.notification-delete-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 14px;
+  min-width: 44px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid #eee;
+  border-radius: 14px;
+  background: #fff;
+  color: #777;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.notification-delete-btn:disabled { opacity: 0.5; cursor: default; }
 
 /* ===== 로그인 페이지 (Auth) ===== */
 .auth-page { display: flex; flex-direction: column; height: 100vh; background: #fff; justify-content: center; align-items: center; }

@@ -1,6 +1,7 @@
 package com.oliveyoung.tracker.domain.product.service;
 
 import com.oliveyoung.tracker.domain.product.dto.PriceHistoryResponse;
+import com.oliveyoung.tracker.domain.product.dto.ProductAlertResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductDetailResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductResponse;
 import com.oliveyoung.tracker.domain.product.entity.Product;
@@ -34,10 +35,15 @@ public class ProductService {
     private final ProductAlertRepository productAlertRepository;
     private final UserRepository userRepository;
 
-    @Cacheable(value = "products", key = "#keyword + ':' + #category + ':' + #brand + ':' + #isSale + ':' + #pageable.pageNumber")
+    @Cacheable(value = "products", key = "#keyword + ':' + #category + ':' + #categories + ':' + #brand + ':' + #isSale + ':' + #pageable.pageNumber + ':' + #pageable.pageSize + ':' + #pageable.sort")
     public Page<ProductResponse> searchProducts(String keyword, String category,
+                                                 List<String> categories,
                                                  String brand, Boolean isSale,
                                                  Pageable pageable) {
+        if (category == null && categories != null && !categories.isEmpty()) {
+            return productRepository.searchProductsByCategories(keyword, categories, brand, isSale, pageable)
+                    .map(ProductResponse::from);
+        }
         return productRepository.searchProducts(keyword, category, brand, isSale, pageable)
                 .map(ProductResponse::from);
     }
@@ -64,7 +70,7 @@ public class ProductService {
         );
     }
 
-    @Cacheable(value = "topDiscounted", key = "#pageable.pageNumber")
+    @Cacheable(value = "topDiscounted", key = "#pageable.pageNumber + ':' + #pageable.pageSize + ':' + #pageable.sort")
     public Page<ProductResponse> getTopDiscounted(Pageable pageable) {
         return productRepository.findTopDiscounted(pageable).map(ProductResponse::from);
     }
@@ -90,11 +96,13 @@ public class ProductService {
                 .toList();
     }
 
+    @Cacheable(value = "atLowest", key = "#size")
     public List<ProductResponse> getAtLowestPrice(int size) {
         return productRepository.findAtLowestPrice(PageRequest.of(0, size))
                 .stream().map(ProductResponse::from).toList();
     }
 
+    @Cacheable(value = "stats", key = "'summary'")
     public Map<String, Long> getStats() {
         long total = productRepository.count();
         long onSale = productRepository.countByIsSaleTrue();
@@ -107,7 +115,7 @@ public class ProductService {
     }
 
     @Transactional
-    public Integer toggleAlert(String email, Long productId, Integer targetPrice) {
+    public ProductAlertResponse toggleAlert(String email, Long productId, Integer targetPrice) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         Product product = productRepository.findById(productId)
@@ -118,17 +126,15 @@ public class ProductService {
         if (alertOpt.isPresent()) {
             ProductAlert alert = alertOpt.get();
             if (targetPrice == null) {
-                // targetPrice가 안 넘어오면 알림 해제로 간주
                 productAlertRepository.delete(alert);
-                return null;
+                return ProductAlertResponse.cleared();
             } else {
-                // 설정된 알림 업데이트
                 alert.updateTargetPrice(targetPrice);
-                return targetPrice;
+                return ProductAlertResponse.set(targetPrice);
             }
         } else {
             if (targetPrice == null) {
-                 return null;
+                return ProductAlertResponse.cleared();
             }
             ProductAlert newAlert = ProductAlert.builder()
                     .user(user)
@@ -136,18 +142,18 @@ public class ProductService {
                     .targetPrice(targetPrice)
                     .build();
             productAlertRepository.save(newAlert);
-            return targetPrice;
+            return ProductAlertResponse.set(targetPrice);
         }
     }
 
-    public Map<String, Object> checkAlertStatus(String email, Long productId) {
+    public ProductAlertResponse checkAlertStatus(String email, Long productId) {
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다."));
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("상품을 찾을 수 없습니다."));
-                
+
         return productAlertRepository.findByUserAndProduct(user, product)
-                .map(alert -> Map.of("isAlertSet", (Object) true, "targetPrice", alert.getTargetPrice() != null ? alert.getTargetPrice() : -1))
-                .orElseGet(() -> Map.of("isAlertSet", false));
+                .map(alert -> ProductAlertResponse.set(alert.getTargetPrice()))
+                .orElseGet(ProductAlertResponse::cleared);
     }
 }

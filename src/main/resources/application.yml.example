@@ -5,6 +5,18 @@ spring:
     password: ${DB_PASSWORD:your_db_password}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:16379}
+      password: ${REDIS_PASSWORD:}
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: ${REDIS_CACHE_TTL:5m}
+      cache-null-values: false
+
   jpa:
     hibernate:
       ddl-auto: update
@@ -24,8 +36,10 @@ kakao:
   redirect-uri: ${KAKAO_REDIRECT_URI:your_callback_url}
 
 crawler:
-  schedule:
-    cron: "0 0 */12 * * *"
+  lock:
+    ttl: ${CRAWLER_LOCK_TTL:5m}
+    redis:
+      key: ${CRAWLER_LOCK_REDIS_KEY:lock:crawler:manual-run}
 
 server:
   port: ${SERVER_PORT:8080}

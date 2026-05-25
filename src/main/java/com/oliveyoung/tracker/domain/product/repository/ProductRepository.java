@@ -37,6 +37,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             Pageable pageable
     );
 
+    @Query("SELECT p FROM Product p WHERE " +
+           "(:keyword IS NULL OR p.name LIKE %:keyword% OR p.brand LIKE %:keyword%) AND " +
+           "p.category IN :categories AND " +
+           "(:brand IS NULL OR p.brand = :brand) AND " +
+           "(:isSale IS NULL OR p.isSale = :isSale)")
+    Page<Product> searchProductsByCategories(
+            @Param("keyword") String keyword,
+            @Param("categories") List<String> categories,
+            @Param("brand") String brand,
+            @Param("isSale") Boolean isSale,
+            Pageable pageable
+    );
+
     @Query("SELECT p FROM Product p ORDER BY p.discountRate DESC")
     Page<Product> findTopDiscounted(Pageable pageable);
 

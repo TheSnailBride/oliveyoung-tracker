@@ -1,8 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, type FormEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Line } from 'react-chartjs-2';
 import annotationPlugin from 'chartjs-plugin-annotation';
+import {
+  createProductAlertRequest,
+  normalizeProductAlertResponse,
+  ProductAlertData
+} from '../api/productAlerts';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -57,14 +62,23 @@ interface Product {
   isSale: boolean;
 }
 
+const DEFAULT_PRODUCT_ALERT: ProductAlertData = {
+  isAlertSet: false,
+  targetPrice: null,
+};
+
 function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [history, setHistory] = useState<PriceHistory[]>([]);
   const [days, setDays] = useState(30);
-  const [isAlertSet, setIsAlertSet] = useState(false);
-  const [targetPrice, setTargetPrice] = useState<number | null>(null);
+  const [productAlert, setProductAlert] = useState<ProductAlertData>(DEFAULT_PRODUCT_ALERT);
+  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
+  const [alertPriceInput, setAlertPriceInput] = useState('');
+  const [alertFormError, setAlertFormError] = useState('');
+  const [alertFeedback, setAlertFeedback] = useState('');
+  const [savingAlert, setSavingAlert] = useState(false);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
   const [loadingSimilar, setLoadingSimilar] = useState<boolean>(true);
 
@@ -78,18 +92,16 @@ function ProductDetail() {
         const [prodRes, historyRes, alertRes] = await Promise.all([
           axios.get(`/api/products/${id}`),
           axios.get(`/api/products/${id}/prices?days=${days}`),
-          token ? axios.get(`/api/products/${id}/alert`, { headers }) : Promise.resolve({ data: { data: { isAlertSet: false, targetPrice: -1 } } })
+          token ? axios.get(`/api/products/${id}/alert`, { headers }) : Promise.resolve({ data: { data: DEFAULT_PRODUCT_ALERT } })
         ]);
         setProduct(prodRes.data.data);
         setHistory(historyRes.data.data);
-        
-        const alertData = alertRes.data.data;
-        setIsAlertSet(alertData.isAlertSet);
-        if (alertData.targetPrice && alertData.targetPrice !== -1) {
-          setTargetPrice(alertData.targetPrice);
-        } else {
-          setTargetPrice(null);
-        }
+
+        const alertData = normalizeProductAlertResponse(alertRes.data.data);
+        setProductAlert(alertData);
+        setAlertPriceInput(alertData.targetPrice ? String(alertData.targetPrice) : '');
+        setAlertFormError('');
+        setAlertFeedback('');
       } catch (err) {
         console.error('데이터 로딩 실패', err);
       }
@@ -99,11 +111,11 @@ function ProductDetail() {
 
   useEffect(() => {
     if (!id) return;
-    
+
     const fetchSimilarProducts = async () => {
       setLoadingSimilar(true);
       try {
-        const response = await axios.get(`/api/v1/products/${id}/similar`);
+        const response = await axios.get(`/api/products/${id}/similar`);
         if (response.data.success) {
           setSimilarProducts(response.data.data);
         }
@@ -117,49 +129,88 @@ function ProductDetail() {
     fetchSimilarProducts();
   }, [id]);
 
-  const toggleAlert = async () => {
+  const openAlertModal = () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    setAlertPriceInput(productAlert.targetPrice ? String(productAlert.targetPrice) : '');
+    setAlertFormError('');
+    setAlertFeedback('');
+    setIsAlertModalOpen(true);
+  };
+
+  const closeAlertModal = () => {
+    if (savingAlert) return;
+    setIsAlertModalOpen(false);
+    setAlertFormError('');
+  };
+
+  const submitAlert = async (event: FormEvent) => {
+    event.preventDefault();
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    const parsedPrice = parseInt(alertPriceInput.replace(/[^0-9]/g, ''), 10);
+    if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
+      setAlertFormError('목표가를 숫자로 입력해주세요.');
+      return;
+    }
+
+    setSavingAlert(true);
+    setAlertFormError('');
     try {
-      const token = localStorage.getItem('token');
-      if (!token) {
-        alert('로그인이 필요합니다.');
-        navigate('/login');
-        return;
-      }
-
-      let reqBody = {};
-
-      if (isAlertSet) {
-        const confirmCancel = window.confirm('알림 설정을 해제하시겠습니까?');
-        if (!confirmCancel) return;
-        // targetPrice 없이 보내면 해제
-      } else {
-        const priceStr = window.prompt(`현재 가격은 ${product?.currentPrice.toLocaleString()}원 입니다.\n얼마 이하로 떨어지면 알림을 받을까요? (숫자만 입력)`, '');
-        if (priceStr === null) return; // 취소 누름
-        const parsedPrice = parseInt(priceStr.replace(/[^0-9]/g, ''));
-        if (isNaN(parsedPrice) || parsedPrice <= 0) {
-          alert('올바른 금액을 입력해주세요.');
-          return;
-        }
-        reqBody = { targetPrice: parsedPrice };
-      }
-      
-      const res = await axios.post(`/api/products/${id}/alert`, reqBody, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const resultData = res.data.data;
-      setIsAlertSet(resultData.isAlertSet);
-      
-      if (resultData.isAlertSet) {
-        setTargetPrice(resultData.targetPrice);
-        alert(`가격이 ${resultData.targetPrice.toLocaleString()}원 이하로 내려가면 알려드릴게요!`);
-      } else {
-        setTargetPrice(null);
-        alert('알림이 해제되었습니다.');
-      }
+      const res = await axios.post(
+        `/api/products/${id}/alert`,
+        createProductAlertRequest(parsedPrice),
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const nextAlert = normalizeProductAlertResponse(res.data.data);
+      setProductAlert(nextAlert);
+      setAlertPriceInput(nextAlert.targetPrice ? String(nextAlert.targetPrice) : '');
+      setIsAlertModalOpen(false);
+      setAlertFeedback(nextAlert.targetPrice
+        ? `${nextAlert.targetPrice.toLocaleString()}원 이하가 되면 알려드릴게요.`
+        : '목표가 알림이 해제되었습니다.');
     } catch (err) {
       console.error('알림 설정 실패', err);
-      alert('알림 설정 중 오류가 발생했습니다.');
+      setAlertFormError('알림 설정 중 오류가 발생했습니다.');
+    } finally {
+      setSavingAlert(false);
+    }
+  };
+
+  const clearAlert = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      navigate('/login');
+      return;
+    }
+
+    setSavingAlert(true);
+    setAlertFormError('');
+    try {
+      const res = await axios.post(
+        `/api/products/${id}/alert`,
+        createProductAlertRequest(null),
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const nextAlert = normalizeProductAlertResponse(res.data.data);
+      setProductAlert(nextAlert);
+      setAlertPriceInput('');
+      setIsAlertModalOpen(false);
+      setAlertFeedback('목표가 알림이 해제되었습니다.');
+    } catch (err) {
+      console.error('알림 해제 실패', err);
+      setAlertFormError('알림 해제 중 오류가 발생했습니다.');
+    } finally {
+      setSavingAlert(false);
     }
   };
 
@@ -288,38 +339,71 @@ function ProductDetail() {
         </div>
       )}
 
-      <div className="detail-bottom-fixed" style={{ display: 'flex', gap: '10px' }}>
+      {alertFeedback && (
+        <div className="detail-toast" role="status">
+          {alertFeedback}
+        </div>
+      )}
+
+      {isAlertModalOpen && product && (
+        <div className="alert-modal-backdrop" role="dialog" aria-modal="true">
+          <form className="alert-modal" onSubmit={submitAlert}>
+            <div className="alert-modal-header">
+              <h2>목표가 알림 설정</h2>
+              <button type="button" className="alert-modal-close" onClick={closeAlertModal} disabled={savingAlert}>
+                ×
+              </button>
+            </div>
+            <div className="alert-modal-body">
+              <div className="alert-current-price">
+                <span>현재가</span>
+                <strong>{product.currentPrice.toLocaleString()}원</strong>
+              </div>
+              <label className="alert-price-field">
+                <span>목표가</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={alertPriceInput}
+                  onChange={(event) => setAlertPriceInput(event.target.value)}
+                  placeholder="예: 12000"
+                  disabled={savingAlert}
+                />
+              </label>
+              {alertFormError && <p className="alert-form-error">{alertFormError}</p>}
+            </div>
+            <div className="alert-modal-actions">
+              {productAlert.isAlertSet && (
+                <button type="button" className="alert-clear-btn" onClick={clearAlert} disabled={savingAlert}>
+                  알림 해제
+                </button>
+              )}
+              <button type="submit" className="alert-save-btn" disabled={savingAlert}>
+                {savingAlert ? '저장 중...' : productAlert.isAlertSet ? '목표가 변경' : '알림 설정'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <div className="detail-bottom-fixed detail-actions">
         <button
-          onClick={toggleAlert}
-          style={{
-            flex: 1,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            flexDirection: 'column',
-            gap: '2px',
-            backgroundColor: isAlertSet ? '#f2f8f2' : '#fff',
-            color: isAlertSet ? '#3D8B37' : '#333',
-            border: `1px solid ${isAlertSet ? '#3D8B37' : '#ddd'}`,
-            borderRadius: '12px',
-            cursor: 'pointer',
-            padding: '4px'
-          }}
+          onClick={openAlertModal}
+          className={`btn-alert-bottom ${productAlert.isAlertSet ? 'active' : ''}`}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: '800', fontSize: '15px' }}>
-            {isAlertSet ? <BellRing size={20} /> : <Bell size={20} />}
-            <span>{isAlertSet ? '목표가 알림 중' : '목표가 알림'}</span>
+          <div className="btn-alert-main">
+            {productAlert.isAlertSet ? <BellRing size={20} /> : <Bell size={20} />}
+            <span>{productAlert.isAlertSet ? '목표가 알림 중' : '목표가 알림'}</span>
           </div>
-          {isAlertSet && targetPrice && (
-            <span style={{ fontSize: '11px', fontWeight: 'bold' }}>({targetPrice.toLocaleString()}원 이하)</span>
+          {productAlert.isAlertSet && productAlert.targetPrice && (
+            <span className="btn-alert-sub">({productAlert.targetPrice.toLocaleString()}원 이하)</span>
           )}
         </button>
-        <a 
-          href={product.productUrl} 
-          target="_blank" 
-          rel="noreferrer" 
+        <a
+          href={product.productUrl}
+          target="_blank"
+          rel="noreferrer"
           className="btn-buy-bottom"
-          style={{ flex: 1.5, margin: 0 }}
         >
           공식몰에서 확인
         </a>

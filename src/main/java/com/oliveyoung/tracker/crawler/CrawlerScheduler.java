@@ -8,6 +8,7 @@ import com.oliveyoung.tracker.domain.product.repository.ProductRepository;
 import com.oliveyoung.tracker.domain.product.service.NotificationService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -15,9 +16,11 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -28,37 +31,67 @@ public class CrawlerScheduler {
     private final ProductRepository productRepository;
     private final PriceHistoryRepository priceHistoryRepository;
     private final NotificationService notificationService;
+    private final CrawlerRunLock crawlerRunLock;
 
     @Value("${python.command:python}")
     private String pythonCmd;
 
+    @jakarta.annotation.PostConstruct
+    public void init() {
+        log.info("=================================================");
+        log.info("CrawlerScheduler initialized!");
+        log.info("Python command: {}", pythonCmd);
+        log.info("Crawler auto schedule: disabled");
+        log.info("=================================================");
+    }
+
     /**
-     * 주기적으로 파이썬 크롤러 스크립트 실행 (6시간 간격 기본)
+     * 파이썬 크롤러 스크립트 실행
      */
-    @Scheduled(fixedDelayString = "${crawler.interval:21600000}")
-    public void runPythonScraper() {
-        log.info("Starting Python Scraper automatically...");
+    private void runPythonScraper() {
+        log.info("=================================================");
+        log.info("Starting Python Scraper manually...");
+        log.info("Command: {} -u scraper.py", pythonCmd);
+        log.info("=================================================");
         try {
-            ProcessBuilder pb = new ProcessBuilder(pythonCmd, "scraper.py");
-            pb.redirectErrorStream(true);
-            Process process = pb.start();
-
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    log.info("[Scraper] " + line);
-                }
-            }
-
-            int exitCode = process.waitFor();
-            log.info("Python Scraper finished with exit code: " + exitCode);
+            executePythonScraper();
         } catch (Exception e) {
             log.error("Error running Python Scraper: " + e.getMessage(), e);
         }
     }
 
-    public void runManualCrawling() {
-        runPythonScraper();
+    protected void executePythonScraper() throws Exception {
+        ProcessBuilder pb = new ProcessBuilder(pythonCmd, "-u", "scraper.py");
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), "UTF-8"))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                log.info("[Scraper] " + line);
+            }
+        }
+
+        int exitCode = process.waitFor();
+        log.info("Python Scraper finished with exit code: " + exitCode);
+    }
+
+    public boolean startManualCrawling() {
+        Optional<CrawlerRunLock.Lease> lease = crawlerRunLock.tryAcquire();
+        if (lease.isEmpty()) {
+            log.warn("Python Scraper is already running. Ignoring duplicate manual request.");
+            return false;
+        }
+
+        Thread crawlerThread = new Thread(() -> {
+            try {
+                runPythonScraper();
+            } finally {
+                lease.get().close();
+            }
+        }, "crawler-manual-runner");
+        crawlerThread.start();
+        return true;
     }
 
     @Scheduled(cron = "0 0 0 * * *")
@@ -70,6 +103,7 @@ public class CrawlerScheduler {
     }
 
     @Transactional
+    @CacheEvict(value = {"products", "topDiscounted", "atLowest", "stats"}, allEntries = true)
     public int[] updatePricesOnly(List<CrawledProduct> crawledProducts) {
         int updatedCount = 0;
         for (CrawledProduct crawled : crawledProducts) {
@@ -83,10 +117,8 @@ public class CrawlerScheduler {
             updatedCount++;
 
             if (crawled.getCurrentPrice() != null) {
-                priceHistoryRepository.save(PriceHistory.of(product,
-                        crawled.getCurrentPrice(), crawled.getOriginalPrice(),
-                        crawled.getDiscountRate(), crawled.getIsSale()));
-                
+                saveDailyLowestPriceHistory(product, crawled);
+
                 if (oldPrice != null && crawled.getCurrentPrice() < oldPrice) {
                     notificationService.checkAndSendPriceDropNotifications(product, oldPrice, crawled.getCurrentPrice());
                 }
@@ -96,6 +128,7 @@ public class CrawlerScheduler {
     }
 
     @Transactional
+    @CacheEvict(value = {"products", "topDiscounted", "atLowest", "stats"}, allEntries = true)
     public int[] saveCrawledProducts(List<CrawledProduct> crawledProducts) {
         int savedCount = 0, updatedCount = 0;
 
@@ -128,11 +161,7 @@ public class CrawlerScheduler {
                         .build();
                 productRepository.save(product);
                 
-                if (crawled.getCurrentPrice() != null) {
-                    priceHistoryRepository.save(PriceHistory.of(product,
-                            crawled.getCurrentPrice(), crawled.getOriginalPrice(),
-                            crawled.getDiscountRate(), crawled.getIsSale()));
-                }
+                saveDailyLowestPriceHistory(product, crawled);
                 savedCount++;
             } else {
                 Integer oldPrice = product.getCurrentPrice();
@@ -142,10 +171,8 @@ public class CrawlerScheduler {
                 updatedCount++;
 
                 if (crawled.getCurrentPrice() != null) {
-                    priceHistoryRepository.save(PriceHistory.of(product,
-                            crawled.getCurrentPrice(), crawled.getOriginalPrice(),
-                            crawled.getDiscountRate(), crawled.getIsSale()));
-                    
+                    saveDailyLowestPriceHistory(product, crawled);
+
                     if (oldPrice != null && crawled.getCurrentPrice() < oldPrice) {
                         notificationService.checkAndSendPriceDropNotifications(product, oldPrice, crawled.getCurrentPrice());
                     }
@@ -153,5 +180,26 @@ public class CrawlerScheduler {
             }
         }
         return new int[]{savedCount, updatedCount};
+    }
+
+    private void saveDailyLowestPriceHistory(Product product, CrawledProduct crawled) {
+        if (crawled.getCurrentPrice() == null) {
+            return;
+        }
+
+        LocalDate today = LocalDate.now();
+        LocalDateTime startOfDay = today.atStartOfDay();
+        LocalDateTime startOfNextDay = today.plusDays(1).atStartOfDay();
+
+        priceHistoryRepository.findTopByProductIdAndRecordedAtBetweenOrderByCurrentPriceAscRecordedAtAsc(
+                        product.getId(), startOfDay, startOfNextDay)
+                .ifPresentOrElse(existing -> {
+                    if (crawled.getCurrentPrice() < existing.getCurrentPrice()) {
+                        existing.updatePrice(crawled.getCurrentPrice(), crawled.getOriginalPrice(),
+                                crawled.getDiscountRate(), crawled.getIsSale());
+                    }
+                }, () -> priceHistoryRepository.save(PriceHistory.of(product,
+                        crawled.getCurrentPrice(), crawled.getOriginalPrice(),
+                        crawled.getDiscountRate(), crawled.getIsSale())));
     }
 }

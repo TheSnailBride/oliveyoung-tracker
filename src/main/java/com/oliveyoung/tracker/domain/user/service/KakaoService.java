@@ -52,32 +52,38 @@ public class KakaoService {
     }
 
     /**
-     * 카카오 로그인 처리 (MOCK): 실제 카카오 API 호출 없이 테스트 계정으로 로그인 처리
+     * 카카오 로그인 처리
      */
     @Transactional
     public String loginOrRegister(String code) {
-        log.info("카카오 로그인 (Mock 처리) - code: {}", code);
+        log.info("카카오 로그인 처리 시작 - code: {}", code);
 
-        // 1. Mock 사용자 정보 생성
-        String mockKakaoId = "mock_kakao_" + System.currentTimeMillis();
-        String mockEmail = "tester@olive.com";
-        String mockNickname = "올리브테스터";
+        // 1. 인가 코드로 카카오 토큰 발급 요청
+        KakaoTokenResponse tokenResponse = exchangeCodeForToken(code);
 
-        // 2. DB에서 찾거나 신규 생성
-        User user = userRepository.findByEmail(mockEmail)
-                .orElseGet(() -> {
-                    User newUser = User.builder()
-                            .email(mockEmail)
-                            .nickname(mockNickname)
-                            .role(User.Role.USER)
-                            .build();
-                    newUser.updateKakaoToken(mockKakaoId, "mock_access_token", "mock_refresh_token", LocalDateTime.now().plusDays(1));
-                    return userRepository.save(newUser);
-                });
+        // 2. 발급받은 액세스 토큰으로 카카오 사용자 정보 조회
+        KakaoUserInfo userInfo = getKakaoUserInfo(tokenResponse.getAccessToken());
 
-        log.info("카카오 로그인 (Mock) 성공 - email: {}, nickname: {}", user.getEmail(), user.getNickname());
+        // 3. 이메일 (또는 카카오 ID 기반 가상 이메일)로 가입 여부 확인
+        String email = userInfo.getEmail() != null
+                ? userInfo.getEmail()
+                : userInfo.getKakaoId() + "@kakao.local";
 
-        // 3. JWT 발급 (이메일을 subject로 사용)
+        User user = userRepository.findByEmail(email)
+                .orElseGet(() -> createKakaoUser(userInfo));
+
+        // 4. 카카오 연동 정보 업데이트
+        LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.getExpiresIn());
+        user.updateKakaoToken(
+                userInfo.getKakaoId(),
+                tokenResponse.getAccessToken(),
+                tokenResponse.getRefreshToken(),
+                expiresAt
+        );
+
+        log.info("카카오 로그인 성공 - email: {}, nickname: {}", user.getEmail(), user.getNickname());
+
+        // 5. 자체 서비스용 JWT 발급
         return jwtTokenProvider.generateToken(user.getEmail());
     }
 
