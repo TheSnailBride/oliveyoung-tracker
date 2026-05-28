@@ -57,12 +57,18 @@ public class Product {
     @UpdateTimestamp
     private LocalDateTime updatedAt;
 
+    @Column
+    private LocalDateTime lastSeenAt;
+
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PriceHistory> priceHistories = new ArrayList<>();
 
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
+        if (this.lastSeenAt == null) {
+            this.lastSeenAt = LocalDateTime.now();
+        }
     }
 
     public void updatePrice(Integer currentPrice, Integer originalPrice, Integer discountRate, Boolean isSale, Boolean isSoldOut) {
@@ -70,7 +76,7 @@ public class Product {
         if (originalPrice != null) this.originalPrice = originalPrice;
         if (discountRate != null) this.discountRate = discountRate;
         this.isSale = isSale;
-        this.isSoldOut = isSoldOut;
+        this.isSoldOut = isSoldOut != null ? isSoldOut : false;
     }
 
     public void updateInfo(String name, String brand, String imageUrl, String productUrl) {
@@ -78,5 +84,9 @@ public class Product {
         this.brand = brand;
         this.imageUrl = imageUrl;
         this.productUrl = productUrl;
+    }
+
+    public void markSeen() {
+        this.lastSeenAt = LocalDateTime.now();
     }
 }

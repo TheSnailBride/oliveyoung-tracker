@@ -34,7 +34,7 @@ class ProductServiceCacheTest {
     void getStatsUsesCacheForRepeatedCalls() {
         when(productRepository.count()).thenReturn(100L);
         when(productRepository.countByIsSaleTrue()).thenReturn(30L);
-        when(productRepository.countAtLowestPrice()).thenReturn(10L);
+        when(productRepository.countAtLowestPrice(2)).thenReturn(10L);
 
         Map<String, Long> first = productService.getStats();
         Map<String, Long> second = productService.getStats();
@@ -42,7 +42,7 @@ class ProductServiceCacheTest {
         assertThat(first).isEqualTo(second);
         verify(productRepository).count();
         verify(productRepository).countByIsSaleTrue();
-        verify(productRepository).countAtLowestPrice();
+        verify(productRepository).countAtLowestPrice(2);
     }
 
     @Configuration

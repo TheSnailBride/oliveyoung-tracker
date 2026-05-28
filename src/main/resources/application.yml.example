@@ -36,10 +36,19 @@ kakao:
   redirect-uri: ${KAKAO_REDIRECT_URI:your_callback_url}
 
 crawler:
+  internal-token: ${CRAWLER_INTERNAL_TOKEN:}
+  schedule:
+    cron: ${CRAWLER_SCHEDULE_CRON:0 0 3 * * *}
+    zone: ${CRAWLER_SCHEDULE_ZONE:Asia/Seoul}
   lock:
     ttl: ${CRAWLER_LOCK_TTL:5m}
     redis:
       key: ${CRAWLER_LOCK_REDIS_KEY:lock:crawler:manual-run}
+
+product:
+  maintenance:
+    cron: ${PRODUCT_MAINTENANCE_CRON:0 30 3 * * *}
+    zone: ${PRODUCT_MAINTENANCE_ZONE:Asia/Seoul}
 
 server:
   port: ${SERVER_PORT:8080}

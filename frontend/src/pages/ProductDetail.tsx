@@ -6,8 +6,16 @@ import annotationPlugin from 'chartjs-plugin-annotation';
 import {
   createProductAlertRequest,
   normalizeProductAlertResponse,
-  ProductAlertData
+  type ProductAlertData
 } from '../api/productAlerts';
+import {
+  fetchPriceHistory,
+  fetchProductDetail,
+  fetchSimilarProducts,
+  type PriceHistory,
+  type Product,
+  type ProductDetailData,
+} from '../api/products';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -17,7 +25,9 @@ import {
   Title,
   Tooltip,
   Legend,
-  Filler
+  Filler,
+  type ChartOptions,
+  type TooltipItem
 } from 'chart.js';
 import { Bell, BellRing } from 'lucide-react';
 
@@ -32,35 +42,6 @@ ChartJS.register(
   Filler,
   annotationPlugin
 );
-
-interface ProductDetailData {
-  id: number;
-  name: string;
-  brand: string;
-  currentPrice: number;
-  originalPrice: number;
-  discountRate: number;
-  imageUrl: string;
-  productUrl: string;
-  lowestPrice: number;
-  highestPrice: number;
-}
-
-interface PriceHistory {
-  currentPrice: number;
-  recordedAt: string;
-}
-
-interface Product {
-  id: number;
-  name: string;
-  brand: string;
-  imageUrl: string;
-  currentPrice: number;
-  originalPrice: number;
-  discountRate: number;
-  isSale: boolean;
-}
 
 const DEFAULT_PRODUCT_ALERT: ProductAlertData = {
   isAlertSet: false,
@@ -83,19 +64,21 @@ function ProductDetail() {
   const [loadingSimilar, setLoadingSimilar] = useState<boolean>(true);
 
   useEffect(() => {
+    if (!id) return;
+
     window.scrollTo(0, 0);
     const fetchData = async () => {
       try {
         const token = localStorage.getItem('token');
         const headers = token ? { Authorization: `Bearer ${token}` } : {};
-        
-        const [prodRes, historyRes, alertRes] = await Promise.all([
-          axios.get(`/api/products/${id}`),
-          axios.get(`/api/products/${id}/prices?days=${days}`),
+
+        const [productData, historyData, alertRes] = await Promise.all([
+          fetchProductDetail(id),
+          fetchPriceHistory(id, days),
           token ? axios.get(`/api/products/${id}/alert`, { headers }) : Promise.resolve({ data: { data: DEFAULT_PRODUCT_ALERT } })
         ]);
-        setProduct(prodRes.data.data);
-        setHistory(historyRes.data.data);
+        setProduct(productData);
+        setHistory(historyData);
 
         const alertData = normalizeProductAlertResponse(alertRes.data.data);
         setProductAlert(alertData);
@@ -112,13 +95,10 @@ function ProductDetail() {
   useEffect(() => {
     if (!id) return;
 
-    const fetchSimilarProducts = async () => {
+    const loadSimilarProducts = async () => {
       setLoadingSimilar(true);
       try {
-        const response = await axios.get(`/api/products/${id}/similar`);
-        if (response.data.success) {
-          setSimilarProducts(response.data.data);
-        }
+        setSimilarProducts(await fetchSimilarProducts(id));
       } catch (error) {
         console.error('Failed to fetch similar products:', error);
       } finally {
@@ -126,7 +106,7 @@ function ProductDetail() {
       }
     };
 
-    fetchSimilarProducts();
+    loadSimilarProducts();
   }, [id]);
 
   const openAlertModal = () => {
@@ -236,7 +216,7 @@ function ProductDetail() {
     }]
   };
 
-  const chartOptions = {
+  const chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     interaction: { mode: 'index' as const, intersect: false },
@@ -246,7 +226,12 @@ function ProductDetail() {
         enabled: true,
         backgroundColor: '#111',
         padding: 12,
-        callbacks: { label: (ctx: any) => `${ctx.parsed.y.toLocaleString()}원` }
+        callbacks: {
+          label: (ctx: TooltipItem<'line'>) => {
+            const price = ctx.parsed.y;
+            return typeof price === 'number' ? `${price.toLocaleString()}원` : '';
+          }
+        }
       }
     },
     scales: {
@@ -261,20 +246,13 @@ function ProductDetail() {
         <div className="detail-img-side" onClick={() => navigate(-1)}>
           <img src={product.imageUrl} alt={product.name} />
         </div>
-        
+
         <div className="detail-info-side">
           <p className="detail-brand-pc">{product.brand}</p>
           <h1 className="detail-name-pc">{product.name}</h1>
           <div className="price-and-tip">
             <div className="detail-price-pc">{product.currentPrice.toLocaleString()}원</div>
-            <div className="purchase-tip" style={{ 
-              padding: '5px 10px', 
-              background: priceDiff > 0 ? '#f8f9fa' : '#f2f8f2', 
-              color: priceDiff > 0 ? '#666' : '#3D8B37', 
-              borderRadius: '8px', 
-              fontSize: '12px', 
-              fontWeight: '800' 
-            }}>
+            <div className={`purchase-tip ${priceDiff > 0 ? 'wait' : 'deal'}`}>
               {priceDiff > 0 ? '👀 존버 추천' : '🔥 득템 찬스'}
             </div>
           </div>
@@ -317,8 +295,8 @@ function ProductDetail() {
           <h2>이 브랜드의 비슷한 상품</h2>
           <div className="similar-list">
             {similarProducts.map((prod) => (
-              <div 
-                key={prod.id} 
+              <div
+                key={prod.id}
                 className="similar-item"
                 onClick={() => navigate(`/product/${prod.id}`)}
               >

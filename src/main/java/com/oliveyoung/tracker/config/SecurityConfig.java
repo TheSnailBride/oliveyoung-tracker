@@ -2,10 +2,13 @@ package com.oliveyoung.tracker.config;
 
 import com.oliveyoung.tracker.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -14,7 +17,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.util.StringUtils;
 
 @Configuration
 @EnableWebSecurity
@@ -22,6 +27,9 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    @Value("${crawler.internal-token:}")
+    private String crawlerInternalToken;
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -33,15 +41,25 @@ public class SecurityConfig {
                 .requestMatchers("/", "/*.html", "/css/**", "/js/**", "/images/**").permitAll()
                 .requestMatchers("/api/kakao/auth-url").permitAll()
                 .requestMatchers("/api/kakao/callback").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/crawler/run").access(crawlerInternalAccess())
+                .requestMatchers(HttpMethod.GET, "/api/products/all-for-crawler").access(crawlerInternalAccess())
+                .requestMatchers("/api/crawler/**").access(crawlerInternalAccess())
                 .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
-                .requestMatchers(HttpMethod.POST, "/api/crawler/**").permitAll()
-                .requestMatchers("/api/crawler/**").permitAll()
                 .anyRequest().authenticated()
             )
             .headers(headers -> headers.frameOptions(f -> f.disable()))
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private AuthorizationManager<RequestAuthorizationContext> crawlerInternalAccess() {
+        return (authentication, context) -> {
+            String providedToken = context.getRequest().getHeader("X-Crawler-Token");
+            boolean granted = StringUtils.hasText(crawlerInternalToken)
+                    && crawlerInternalToken.equals(providedToken);
+            return new AuthorizationDecision(granted);
+        };
     }
 
     @Bean

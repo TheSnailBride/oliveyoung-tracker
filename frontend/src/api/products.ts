@@ -17,6 +17,17 @@ export interface Product {
   isSale: boolean;
 }
 
+export interface ProductDetailData extends Product {
+  productUrl: string;
+  lowestPrice: number;
+  highestPrice: number;
+}
+
+export interface PriceHistory {
+  currentPrice: number;
+  recordedAt: string;
+}
+
 export interface PageData {
   content: Product[];
   totalPages: number;
@@ -86,5 +97,22 @@ export async function fetchProducts(filters: ProductSearchFilters): Promise<Page
   const response = await axios.get('/api/products', {
     params: buildProductSearchParams(filters),
   });
+  return response.data.data;
+}
+
+export async function fetchProductDetail(productId: string | number): Promise<ProductDetailData> {
+  const response = await axios.get(`/api/products/${productId}`);
+  return response.data.data;
+}
+
+export async function fetchPriceHistory(productId: string | number, days: number): Promise<PriceHistory[]> {
+  const response = await axios.get(`/api/products/${productId}/prices`, {
+    params: { days },
+  });
+  return response.data.data;
+}
+
+export async function fetchSimilarProducts(productId: string | number): Promise<Product[]> {
+  const response = await axios.get(`/api/products/${productId}/similar`);
   return response.data.data;
 }

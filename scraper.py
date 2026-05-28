@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import time
 import requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -11,6 +12,7 @@ logging.getLogger('scrapling').setLevel(logging.WARNING)
 BASE_API_URL = "http://localhost:8080/api/crawler"
 IMPORT_API_URL = f"{BASE_API_URL}/import"
 GET_PRODUCTS_API_URL = "http://localhost:8080/api/products/all-for-crawler"
+CRAWLER_INTERNAL_TOKEN = os.getenv("CRAWLER_INTERNAL_TOKEN", "").strip()
 
 # Olive Young URLs
 BEST_URL = "https://m.oliveyoung.co.kr/m/main/getBestList.do"
@@ -132,7 +134,7 @@ def parse_price(price_str):
 def get_db_products():
     print("[Python Scraper] Fetching existing products from DB...")
     try:
-        response = requests.get(GET_PRODUCTS_API_URL, timeout=10)
+        response = requests.get(GET_PRODUCTS_API_URL, headers=internal_headers(), timeout=10)
         if response.status_code == 200:
             data = response.json()
             products_list = data.get("data", [])
@@ -151,7 +153,7 @@ def send_to_backend(products, category_name="Batch"):
 
     # 50개 단위 배치 전송
     batch_size = 50
-    headers = {'Content-type': 'application/json'}
+    headers = internal_headers({'Content-type': 'application/json'})
     for i in range(0, len(products), batch_size):
         batch = products[i:i+batch_size]
         print(f"[{category_name}] Sending batch of {len(batch)} products to Spring Boot Backend...")
@@ -163,6 +165,12 @@ def send_to_backend(products, category_name="Batch"):
                 print(f"Failed to send data. Status code: {response.status_code}, Response: {response.text}")
         except Exception as e:
             print(f"Could not connect to backend at {IMPORT_API_URL}. Is Spring Boot running? Error: {e}")
+
+def internal_headers(base_headers=None):
+    headers = dict(base_headers or {})
+    if CRAWLER_INTERNAL_TOKEN:
+        headers["X-Crawler-Token"] = CRAWLER_INTERNAL_TOKEN
+    return headers
 
 def parse_product_items(items, cat_name):
     parsed = []

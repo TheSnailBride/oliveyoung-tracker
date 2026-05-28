@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Optional;
@@ -69,6 +70,32 @@ class CrawlerSchedulerTest {
         assertThat(lock.releaseCount()).isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("서버 스케줄러는 락을 획득해 파이썬 크롤러를 자동 실행하고 종료 후 락을 해제한다")
+    void scheduledCrawlingRunsWithLockAndReleasesIt() {
+        InMemoryCrawlerRunLock lock = new InMemoryCrawlerRunLock();
+        CountingCrawlerScheduler scheduler = new CountingCrawlerScheduler(lock);
+
+        scheduler.runScheduledCrawling();
+
+        assertThat(scheduler.executionCount()).isEqualTo(1);
+        assertThat(lock.releaseCount()).isEqualTo(1);
+    }
+
+    @Test
+    @DisplayName("파이썬 크롤러 프로세스에는 내부 API 토큰을 환경 변수로 전달한다")
+    void crawlerProcessReceivesInternalTokenEnvironmentVariable() {
+        ExposedProcessBuilderCrawlerScheduler scheduler = new ExposedProcessBuilderCrawlerScheduler(
+                new InMemoryCrawlerRunLock()
+        );
+        ReflectionTestUtils.setField(scheduler, "crawlerInternalToken", "test-crawler-token");
+
+        ProcessBuilder processBuilder = scheduler.exposeProcessBuilder();
+
+        assertThat(processBuilder.environment().get("CRAWLER_INTERNAL_TOKEN"))
+                .isEqualTo("test-crawler-token");
+    }
+
     private CrawledProduct product(String oliveYoungId, int currentPrice) {
         return CrawledProduct.builder()
                 .oliveYoungId(oliveYoungId)
@@ -92,7 +119,7 @@ class CrawlerSchedulerTest {
         private CountDownLatch finished = new CountDownLatch(1);
 
         BlockingCrawlerScheduler(CrawlerRunLock crawlerRunLock) {
-            super(null, null, null, crawlerRunLock);
+            super(null, crawlerRunLock);
         }
 
         @Override
@@ -116,6 +143,35 @@ class CrawlerSchedulerTest {
 
         void finish() {
             finish.countDown();
+        }
+    }
+
+    private static class CountingCrawlerScheduler extends CrawlerScheduler {
+
+        private int executionCount;
+
+        CountingCrawlerScheduler(CrawlerRunLock crawlerRunLock) {
+            super(null, crawlerRunLock);
+        }
+
+        @Override
+        protected void executePythonScraper() {
+            executionCount++;
+        }
+
+        int executionCount() {
+            return executionCount;
+        }
+    }
+
+    private static class ExposedProcessBuilderCrawlerScheduler extends CrawlerScheduler {
+
+        ExposedProcessBuilderCrawlerScheduler(CrawlerRunLock crawlerRunLock) {
+            super(null, crawlerRunLock);
+        }
+
+        ProcessBuilder exposeProcessBuilder() {
+            return createProcessBuilder();
         }
     }
 

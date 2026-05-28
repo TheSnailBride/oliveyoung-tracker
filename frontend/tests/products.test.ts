@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import axios from 'axios';
 
 import { CATEGORY_GROUPS } from '../src/constants/categories.ts';
-import { buildProductSearchParams } from '../src/api/products.ts';
+import {
+  buildProductSearchParams,
+  fetchPriceHistory,
+  fetchProductDetail,
+  fetchSimilarProducts,
+} from '../src/api/products.ts';
 
 test('builds product search params for a selected category group', () => {
   const skincare = CATEGORY_GROUPS.find(group => group.name === '스킨케어');
@@ -42,4 +48,100 @@ test('builds product search params for a specific category', () => {
       sort: 'updatedAt,desc',
     },
   );
+});
+
+test('fetches product detail through the products API module', async () => {
+  const originalGet = axios.get;
+  const calls: Array<{ url: string; config?: unknown }> = [];
+
+  axios.get = async (url: string, config?: unknown) => {
+    calls.push({ url, config });
+    return {
+      data: {
+        data: {
+          id: 10,
+          name: '테스트 상품',
+          brand: '테스트 브랜드',
+          currentPrice: 9000,
+          originalPrice: 10000,
+          discountRate: 10,
+          imageUrl: 'https://example.com/image.jpg',
+          productUrl: 'https://example.com/product',
+          lowestPrice: 8000,
+          highestPrice: 12000,
+        },
+      },
+    };
+  };
+
+  try {
+    const result = await fetchProductDetail('10');
+
+    assert.equal(result.id, 10);
+    assert.deepEqual(calls, [{ url: '/api/products/10', config: undefined }]);
+  } finally {
+    axios.get = originalGet;
+  }
+});
+
+test('fetches price history with a days query parameter', async () => {
+  const originalGet = axios.get;
+  const calls: Array<{ url: string; config?: unknown }> = [];
+
+  axios.get = async (url: string, config?: unknown) => {
+    calls.push({ url, config });
+    return {
+      data: {
+        data: [
+          {
+            currentPrice: 9000,
+            recordedAt: '2026-05-26T09:00:00',
+          },
+        ],
+      },
+    };
+  };
+
+  try {
+    const result = await fetchPriceHistory('10', 90);
+
+    assert.equal(result[0].currentPrice, 9000);
+    assert.deepEqual(calls, [{ url: '/api/products/10/prices', config: { params: { days: 90 } } }]);
+  } finally {
+    axios.get = originalGet;
+  }
+});
+
+test('fetches similar products from the products API module', async () => {
+  const originalGet = axios.get;
+  const calls: Array<{ url: string; config?: unknown }> = [];
+
+  axios.get = async (url: string, config?: unknown) => {
+    calls.push({ url, config });
+    return {
+      data: {
+        data: [
+          {
+            id: 11,
+            name: '추천 상품',
+            brand: '테스트 브랜드',
+            currentPrice: 8500,
+            originalPrice: 10000,
+            discountRate: 15,
+            imageUrl: 'https://example.com/similar.jpg',
+            isSale: true,
+          },
+        ],
+      },
+    };
+  };
+
+  try {
+    const result = await fetchSimilarProducts('10');
+
+    assert.equal(result[0].id, 11);
+    assert.deepEqual(calls, [{ url: '/api/products/10/similar', config: undefined }]);
+  } finally {
+    axios.get = originalGet;
+  }
 });

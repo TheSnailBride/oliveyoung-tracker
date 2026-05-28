@@ -23,12 +23,13 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ProductService {
+
+    private static final long MIN_PRICE_HISTORY_COUNT_FOR_LOWEST = 2;
 
     private final ProductRepository productRepository;
     private final PriceHistoryRepository priceHistoryRepository;
@@ -75,11 +76,6 @@ public class ProductService {
         return productRepository.findTopDiscounted(pageable).map(ProductResponse::from);
     }
 
-    public List<ProductResponse> getSimilarProducts(Long productId, String category, int size) {
-        return productRepository.findSimilarProducts(category, productId, PageRequest.of(0, size))
-                .stream().map(ProductResponse::from).toList();
-    }
-
     @Transactional(readOnly = true)
     public List<ProductResponse> getSimilarProducts(Long productId) {
         Product product = productRepository.findById(productId)
@@ -96,17 +92,17 @@ public class ProductService {
                 .toList();
     }
 
-    @Cacheable(value = "atLowest", key = "#size")
+    @Cacheable(value = "atLowest", key = "'meaningful-v1:' + #size")
     public List<ProductResponse> getAtLowestPrice(int size) {
-        return productRepository.findAtLowestPrice(PageRequest.of(0, size))
+        return productRepository.findAtLowestPrice(MIN_PRICE_HISTORY_COUNT_FOR_LOWEST, PageRequest.of(0, size))
                 .stream().map(ProductResponse::from).toList();
     }
 
-    @Cacheable(value = "stats", key = "'summary'")
+    @Cacheable(value = "stats", key = "'summary:v2'")
     public Map<String, Long> getStats() {
         long total = productRepository.count();
         long onSale = productRepository.countByIsSaleTrue();
-        long atLowest = productRepository.countAtLowestPrice();
+        long atLowest = productRepository.countAtLowestPrice(MIN_PRICE_HISTORY_COUNT_FOR_LOWEST);
         return Map.of("total", total, "onSale", onSale, "atLowest", atLowest);
     }
 

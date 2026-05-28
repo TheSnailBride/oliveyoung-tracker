@@ -4,9 +4,11 @@ import com.oliveyoung.tracker.domain.product.entity.Product;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,22 +55,52 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("SELECT p FROM Product p ORDER BY p.discountRate DESC")
     Page<Product> findTopDiscounted(Pageable pageable);
 
-    // 역대 최저가 도달 상품 (현재가 = 가격이력 최솟값)
-    @Query("SELECT p FROM Product p WHERE p.currentPrice = " +
-           "(SELECT MIN(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id) " +
-           "AND p.discountRate > 0 ORDER BY p.discountRate DESC")
-    List<Product> findAtLowestPrice(Pageable pageable);
+    // 역대 최저가 도달 상품: 충분한 가격 이력이 있고, 현재가가 이력 최저가인 상품
+    @Query("""
+            SELECT p FROM Product p
+            WHERE p.isSoldOut = false
+            AND p.currentPrice IS NOT NULL
+            AND p.currentPrice = (
+                SELECT MIN(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id
+            )
+            AND (
+                SELECT COUNT(ph) FROM PriceHistory ph WHERE ph.product.id = p.id
+            ) >= :minHistoryCount
+            AND p.discountRate > 0
+            ORDER BY
+                (
+                    (
+                        SELECT MAX(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id
+                    ) - p.currentPrice
+                ) * 1.0 / (
+                    SELECT MAX(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id
+                ) DESC,
+                p.discountRate DESC,
+                p.currentPrice ASC
+            """)
+    List<Product> findAtLowestPrice(@Param("minHistoryCount") long minHistoryCount, Pageable pageable);
 
     long countByIsSaleTrue();
 
-    @Query("SELECT COUNT(p) FROM Product p WHERE p.currentPrice = " +
-           "(SELECT MIN(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id) " +
-           "AND p.discountRate > 0")
-    long countAtLowestPrice();
+    @Query("""
+            SELECT COUNT(p) FROM Product p
+            WHERE p.isSoldOut = false
+            AND p.currentPrice IS NOT NULL
+            AND p.currentPrice = (
+                SELECT MIN(ph.currentPrice) FROM PriceHistory ph WHERE ph.product.id = p.id
+            )
+            AND (
+                SELECT COUNT(ph) FROM PriceHistory ph WHERE ph.product.id = p.id
+            ) >= :minHistoryCount
+            AND p.discountRate > 0
+            """)
+    long countAtLowestPrice(@Param("minHistoryCount") long minHistoryCount);
 
     @Query("SELECT p.oliveYoungId as oliveYoungId, p.productUrl as productUrl FROM Product p")
     List<Map<String, String>> findAllForCrawler();
 
-    @Query("SELECT p FROM Product p WHERE p.category = :category AND p.id != :excludeId ORDER BY p.discountRate DESC")
-    List<Product> findSimilarProducts(@Param("category") String category, @Param("excludeId") Long excludeId, Pageable pageable);
+    @Modifying
+    @Query("UPDATE Product p SET p.isSoldOut = true " +
+           "WHERE (p.lastSeenAt IS NULL OR p.lastSeenAt < :cutoff) AND p.isSoldOut = false")
+    int markStaleProductsAsSoldOut(@Param("cutoff") LocalDateTime cutoff);
 }

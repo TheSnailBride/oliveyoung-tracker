@@ -6,6 +6,7 @@ import com.oliveyoung.tracker.domain.user.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -16,4 +17,5 @@ public interface ProductAlertRepository extends JpaRepository<ProductAlert, Long
     void deleteByUserAndProduct(User user, Product product);
     List<ProductAlert> findByProduct(Product product);
     List<ProductAlert> findByUser(User user);
+    void deleteByCreatedAtBefore(LocalDateTime cutoff);
 }
