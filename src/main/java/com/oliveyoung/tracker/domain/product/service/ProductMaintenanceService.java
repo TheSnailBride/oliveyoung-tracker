@@ -1,6 +1,5 @@
 package com.oliveyoung.tracker.domain.product.service;
 
-import com.oliveyoung.tracker.domain.product.repository.ProductAlertRepository;
 import com.oliveyoung.tracker.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,20 +14,11 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class ProductMaintenanceService {
 
-    private static final int EXPIRED_ALERT_MONTHS = 6;
     public static final int STALE_PRODUCT_HIDE_DAYS = 30;
     public static final int STALE_PRODUCT_DELETE_CANDIDATE_DAYS = 90;
 
-    private final ProductAlertRepository productAlertRepository;
     private final ProductRepository productRepository;
     private final Clock clock;
-
-    @Transactional
-    public void deleteExpiredProductAlerts() {
-        LocalDateTime cutoff = LocalDateTime.now(clock).minusMonths(EXPIRED_ALERT_MONTHS);
-        productAlertRepository.deleteByCreatedAtBefore(cutoff);
-        log.info("Deleted product alerts created before {}", cutoff);
-    }
 
     @Transactional
     public void markStaleProductsAsSoldOut() {

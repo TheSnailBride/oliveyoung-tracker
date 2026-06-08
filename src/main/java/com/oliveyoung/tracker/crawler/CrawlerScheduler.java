@@ -29,6 +29,9 @@ public class CrawlerScheduler {
     @Value("${crawler.internal-token:}")
     private String crawlerInternalToken;
 
+    @Value("${server.port:8080}")
+    private String serverPort;
+
     @Value("${crawler.schedule.cron:0 0 3 * * *}")
     private String crawlerScheduleCron;
 
@@ -77,6 +80,7 @@ public class CrawlerScheduler {
 
     protected ProcessBuilder createProcessBuilder() {
         ProcessBuilder pb = new ProcessBuilder(pythonCmd, "-u", "scraper.py");
+        pb.environment().put("SERVER_PORT", StringUtils.hasText(serverPort) ? serverPort : "8080");
         if (StringUtils.hasText(crawlerInternalToken)) {
             pb.environment().put("CRAWLER_INTERNAL_TOKEN", crawlerInternalToken);
         }

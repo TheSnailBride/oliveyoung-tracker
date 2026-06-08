@@ -14,6 +14,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .eslintcache
+*.log
 
 ### IntelliJ IDEA ###
 .idea
@@ -46,3 +47,4 @@ debug_oliveyoung_page.html
 pdfshot.png
 portfolio_page_view.png
 portfolio_review.pdf
+portfolio_review_pages/

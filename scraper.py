@@ -3,23 +3,27 @@ import logging
 import os
 import time
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from scrapling import StealthyFetcher
 
 logging.getLogger('scrapling').setLevel(logging.WARNING)
 
 # Backend API Endpoints
-BASE_API_URL = "http://localhost:8080/api/crawler"
+SERVER_PORT = os.getenv("SERVER_PORT", "8080").strip() or "8080"
+BACKEND_INTERNAL_BASE_URL = os.getenv(
+    "BACKEND_INTERNAL_BASE_URL",
+    f"http://localhost:{SERVER_PORT}/api"
+).rstrip("/")
+BASE_API_URL = f"{BACKEND_INTERNAL_BASE_URL}/crawler"
 IMPORT_API_URL = f"{BASE_API_URL}/import"
-GET_PRODUCTS_API_URL = "http://localhost:8080/api/products/all-for-crawler"
+GET_PRODUCTS_API_URL = f"{BACKEND_INTERNAL_BASE_URL}/products/all-for-crawler"
 CRAWLER_INTERNAL_TOKEN = os.getenv("CRAWLER_INTERNAL_TOKEN", "").strip()
 
 # Olive Young URLs
 BEST_URL = "https://m.oliveyoung.co.kr/m/main/getBestList.do"
 PRODUCT_DETAIL_URL = "https://m.oliveyoung.co.kr/m/goods/getGoodsDetail.do?goodsNo="
-CATEGORY_WAIT_SECONDS = 1.5
+CATEGORY_WAIT_SECONDS = 5.0
 CATEGORY_RETRY_DELAYS = [30, 30]
-CATEGORY_BLOCKED_MARKERS = ("Just a moment", "Access Denied", "Forbidden")
+CATEGORY_BLOCKED_MARKERS = ("Just a moment", "Access Denied", "Forbidden", "잠시만 기다려 주세요", "접속 정보를 확인")
 
 # 사용자가 지정한 15자리 하위 카테고리 ID 목록
 TARGET_CATEGORIES = {
@@ -131,6 +135,26 @@ def parse_price(price_str):
     cleaned = ''.join(filter(str.isdigit, price_str))
     return int(cleaned) if cleaned else None
 
+def is_dermo_category(category_name):
+    return bool(category_name) and category_name.startswith("더모_")
+
+def should_replace_collected_product(existing_product, candidate_product):
+    if not existing_product:
+        return True
+
+    existing_category = existing_product.get("category")
+    candidate_category = candidate_product.get("category")
+    return is_dermo_category(candidate_category) and not is_dermo_category(existing_category)
+
+def merge_collected_product(collected_products, product):
+    olive_id = product.get("oliveYoungId")
+    if not olive_id:
+        return
+
+    existing_product = collected_products.get(olive_id)
+    if should_replace_collected_product(existing_product, product):
+        collected_products[olive_id] = product
+
 def get_db_products():
     print("[Python Scraper] Fetching existing products from DB...")
     try:
@@ -180,7 +204,7 @@ def parse_product_items(items, cat_name):
             name_el = item.css(".tx_name") or item.css(".prd_name")
             if name_el:
                 name = name_el[0].text.strip()
-            
+
             if not name:
                 zzim_btn = item.css(".btn_zzim")
                 if zzim_btn:
@@ -297,51 +321,14 @@ def scrape_category_page(url, cat_name, retry_empty=True):
 
     return [], 0, 0, last_reason
 
-def scrape_individual_product(olive_id, url):
-    if not url:
-        url = PRODUCT_DETAIL_URL + olive_id
-    try:
-        page = StealthyFetcher.fetch(url, headless=True)
-        time.sleep(1) # 부하 방지
-        
-        # 품절 확인
-        sold_out_btn = page.css(".btn_buy.btn_soldout")
-        is_sold_out = True if sold_out_btn else False
-
-        # 가격 확인
-        current_price_el = page.css(".price_area .buy_price .num")
-        current_price = parse_price(current_price_el[0].text) if current_price_el else None
-
-        org_price_el = page.css(".price_area .strike_price .num")
-        org_price = parse_price(org_price_el[0].text) if org_price_el else current_price
-
-        if not current_price:
-            return None
-
-        return {
-            "oliveYoungId": olive_id,
-            "productUrl": url,
-            "currentPrice": current_price,
-            "originalPrice": org_price,
-            "discountRate": int((1 - current_price/org_price) * 100) if org_price and org_price > current_price else 0,
-            "isSale": org_price is not None and org_price > current_price,
-            "isSoldOut": is_sold_out
-        }
-    except Exception as e:
-        print(f"Error scraping individual product {olive_id}: {e}")
-        return None
-
 def scrape_oliveyoung():
-    print("[Python Scraper] Starting full update process (Hybrid Pagination Strategy)...")
+    print("[Python Scraper] Starting full update process (Category Pagination Strategy)...")
     start_time_total = time.time()
 
-    # 1. DB 상품 목록 가져오기
-    db_products = get_db_products()
-    
     # 중복 방지를 위한 데이터 저장소 {olive_id: product_data}
     collected_products = {}
 
-    # 2. 카테고리 페이지 크롤링 (최대 15페이지까지 탐색)
+    # 1. 카테고리 페이지 크롤링
     category_start_time = time.time()
     for cat_name, cat_id in TARGET_CATEGORIES.items():
         print(f"\nCrawling Category Pages: [{cat_name}]")
@@ -357,9 +344,7 @@ def scrape_oliveyoung():
                     break
 
                 for p in products:
-                    oid = p["oliveYoungId"]
-                    if oid not in collected_products:
-                        collected_products[oid] = p
+                    merge_collected_product(collected_products, p)
 
                 print(f"  [Page {page_idx}] Added {len(products)} products. fetch={fetch_elapsed:.2f}s parse={parse_elapsed:.2f}s")
 
@@ -375,45 +360,13 @@ def scrape_oliveyoung():
     category_end_time = time.time()
     print(f"\n[Time Metrics] Category Pages Crawl completed in {category_end_time - category_start_time:.2f} seconds.")
 
-    # 3. 카테고리에 없는 DB 상품 개별 크롤링 (스나이퍼 크롤링)
-    individual_start_time = time.time()
-    scraped_ids = set(collected_products.keys())
-    remaining_ids = set(db_products.keys()) - scraped_ids
-    
-    print(f"\n[Individual Update] Found {len(remaining_ids)} products in DB not covered by Categories.")
-
-    if remaining_ids:
-        max_workers = 5
-        print(f"Starting parallel scraping with {max_workers} threads...")
-
-        def fetch_individual(task_info):
-            oid, url = task_info
-            info = scrape_individual_product(oid, url)
-            return info
-
-        tasks = [(oid, db_products[oid]) for oid in remaining_ids]
-        
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_oid = {executor.submit(fetch_individual, task): task[0] for task in tasks}
-            for future in as_completed(future_to_oid):
-                oid = future_to_oid[future]
-                try:
-                    result = future.result()
-                    if result:
-                        collected_products[oid] = result
-                except Exception as e:
-                    print(f"Error fetching individual info for {oid}: {e}")
-
-    individual_end_time = time.time()
-    print(f"\n[Time Metrics] Individual Update completed in {individual_end_time - individual_start_time:.2f} seconds.")
-
-    # 4. 결과 통합 및 백엔드 전송
+    # 2. 결과 통합 및 백엔드 전송
     transfer_start_time = time.time()
     all_results = list(collected_products.values())
     print(f"\n[Finalizing] Total unique products to update: {len(all_results)}")
-    
-    send_to_backend(all_results, category_name="Final Hybrid Update")
-    
+
+    send_to_backend(all_results, category_name="Final Category Update")
+
     transfer_end_time = time.time()
     print(f"[Time Metrics] Data Transfer completed in {transfer_end_time - transfer_start_time:.2f} seconds.")
 

@@ -2,19 +2,16 @@ package com.oliveyoung.tracker.domain.product.controller;
 
 import com.oliveyoung.tracker.common.response.ApiResponse;
 import com.oliveyoung.tracker.domain.product.dto.PriceHistoryResponse;
-import com.oliveyoung.tracker.domain.product.dto.ProductAlertRequest;
-import com.oliveyoung.tracker.domain.product.dto.ProductAlertResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductDetailResponse;
 import com.oliveyoung.tracker.domain.product.dto.ProductResponse;
 import com.oliveyoung.tracker.domain.product.service.ProductService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Arrays;
@@ -25,6 +22,11 @@ import java.util.Map;
 @RequestMapping("/api/products")
 @RequiredArgsConstructor
 public class ProductController {
+
+    private static final int MAX_PAGE_SIZE = 50;
+    private static final int MAX_PRICE_HISTORY_DAYS = 365;
+    private static final int MAX_LOWEST_PRODUCTS_SIZE = 50;
+    private static final int MAX_PRICE_DROPPED_PRODUCTS_SIZE = 30;
 
     private final ProductService productService;
 
@@ -41,14 +43,21 @@ public class ProductController {
             @RequestParam(required = false) Boolean isSale,
             @PageableDefault(size = 20, sort = "updatedAt", direction = Sort.Direction.DESC) Pageable pageable) {
 
-        List<String> categoryList = categories == null || categories.isBlank()
-                ? List.of()
-                : Arrays.stream(categories.split(","))
-                        .map(String::trim)
-                        .filter(value -> !value.isBlank())
-                        .toList();
-        Page<ProductResponse> products = productService.searchProducts(keyword, category, categoryList, brand, isSale, pageable);
+        List<String> categoryList = resolveCategoryList(null, categories);
+        Page<ProductResponse> products = productService.searchProducts(keyword, category, categoryList, brand, isSale, capPageable(pageable));
         return ResponseEntity.ok(ApiResponse.ok(products));
+    }
+
+    @GetMapping("/price-drops")
+    public ResponseEntity<ApiResponse<List<ProductResponse>>> getPriceDrops(
+            @RequestParam(required = false) String category,
+            @RequestParam(required = false) String categories,
+            @RequestParam(defaultValue = "9") int size) {
+        List<String> categoryList = resolveCategoryList(category, categories);
+        return ResponseEntity.ok(ApiResponse.ok(productService.getPriceDroppedProducts(
+                categoryList,
+                cap(size, 1, MAX_PRICE_DROPPED_PRODUCTS_SIZE)
+        )));
     }
 
     /**
@@ -70,7 +79,7 @@ public class ProductController {
             @PathVariable Long id,
             @RequestParam(defaultValue = "30") int days) {
 
-        List<PriceHistoryResponse> history = productService.getPriceHistory(id, days);
+        List<PriceHistoryResponse> history = productService.getPriceHistory(id, cap(days, 1, MAX_PRICE_HISTORY_DAYS));
         return ResponseEntity.ok(ApiResponse.ok(history));
     }
 
@@ -82,7 +91,7 @@ public class ProductController {
     public ResponseEntity<ApiResponse<Page<ProductResponse>>> getTopDiscounted(
             @PageableDefault(size = 20) Pageable pageable) {
 
-        Page<ProductResponse> products = productService.getTopDiscounted(pageable);
+        Page<ProductResponse> products = productService.getTopDiscounted(capPageable(pageable));
         return ResponseEntity.ok(ApiResponse.ok(products));
     }
 
@@ -96,7 +105,7 @@ public class ProductController {
     @GetMapping("/at-lowest")
     public ResponseEntity<ApiResponse<List<ProductResponse>>> getAtLowest(
             @RequestParam(defaultValue = "10") int size) {
-        return ResponseEntity.ok(ApiResponse.ok(productService.getAtLowestPrice(size)));
+        return ResponseEntity.ok(ApiResponse.ok(productService.getAtLowestPrice(cap(size, 1, MAX_LOWEST_PRODUCTS_SIZE))));
     }
 
     @GetMapping("/stats")
@@ -109,27 +118,27 @@ public class ProductController {
         return ResponseEntity.ok(ApiResponse.ok(productService.getAllProductsForCrawler()));
     }
 
-    @PostMapping("/{id}/alert")
-    public ResponseEntity<ApiResponse<ProductAlertResponse>> toggleAlert(
-            @PathVariable Long id,
-            @RequestBody(required = false) ProductAlertRequest body,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        if (userDetails == null) {
-            throw new IllegalArgumentException("로그인이 필요합니다.");
+    private Pageable capPageable(Pageable pageable) {
+        if (pageable.getPageSize() <= MAX_PAGE_SIZE) {
+            return pageable;
         }
-        Integer targetPrice = body != null ? body.targetPrice() : null;
-        ProductAlertResponse response = productService.toggleAlert(userDetails.getUsername(), id, targetPrice);
-        return ResponseEntity.ok(ApiResponse.ok(response));
+        return PageRequest.of(pageable.getPageNumber(), MAX_PAGE_SIZE, pageable.getSort());
     }
 
-    @GetMapping("/{id}/alert")
-    public ResponseEntity<ApiResponse<ProductAlertResponse>> checkAlert(
-            @PathVariable Long id,
-            @AuthenticationPrincipal UserDetails userDetails) {
-        if (userDetails == null) {
-            return ResponseEntity.ok(ApiResponse.ok(ProductAlertResponse.cleared()));
+    private int cap(int value, int min, int max) {
+        return Math.min(Math.max(value, min), max);
+    }
+
+    private List<String> resolveCategoryList(String category, String categories) {
+        if (category != null && !category.isBlank()) {
+            return List.of(category.trim());
         }
-        ProductAlertResponse status = productService.checkAlertStatus(userDetails.getUsername(), id);
-        return ResponseEntity.ok(ApiResponse.ok(status));
+
+        return categories == null || categories.isBlank()
+                ? List.of()
+                : Arrays.stream(categories.split(","))
+                        .map(String::trim)
+                        .filter(value -> !value.isBlank())
+                        .toList();
     }
 }

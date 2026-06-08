@@ -1,14 +1,10 @@
-import { useState, useEffect, type FormEvent } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { Line } from 'react-chartjs-2';
 import annotationPlugin from 'chartjs-plugin-annotation';
 import {
-  createProductAlertRequest,
-  normalizeProductAlertResponse,
-  type ProductAlertData
-} from '../api/productAlerts';
-import {
+  DEFAULT_PRICE_HISTORY_DAYS,
   fetchPriceHistory,
   fetchProductDetail,
   fetchSimilarProducts,
@@ -29,7 +25,6 @@ import {
   type ChartOptions,
   type TooltipItem
 } from 'chart.js';
-import { Bell, BellRing } from 'lucide-react';
 
 ChartJS.register(
   CategoryScale,
@@ -43,158 +38,116 @@ ChartJS.register(
   annotationPlugin
 );
 
-const DEFAULT_PRODUCT_ALERT: ProductAlertData = {
-  isAlertSet: false,
-  targetPrice: null,
-};
-
 function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [product, setProduct] = useState<ProductDetailData | null>(null);
   const [history, setHistory] = useState<PriceHistory[]>([]);
-  const [days, setDays] = useState(30);
-  const [productAlert, setProductAlert] = useState<ProductAlertData>(DEFAULT_PRODUCT_ALERT);
-  const [isAlertModalOpen, setIsAlertModalOpen] = useState(false);
-  const [alertPriceInput, setAlertPriceInput] = useState('');
-  const [alertFormError, setAlertFormError] = useState('');
-  const [alertFeedback, setAlertFeedback] = useState('');
-  const [savingAlert, setSavingAlert] = useState(false);
   const [similarProducts, setSimilarProducts] = useState<Product[]>([]);
   const [loadingSimilar, setLoadingSimilar] = useState<boolean>(true);
+  const [loadingProduct, setLoadingProduct] = useState(true);
+  const [productError, setProductError] = useState('');
 
   useEffect(() => {
-    if (!id) return;
+    if (!id) {
+      setLoadingProduct(false);
+      setProductError('상품 정보를 찾을 수 없습니다.');
+      return;
+    }
 
     window.scrollTo(0, 0);
-    const fetchData = async () => {
-      try {
-        const token = localStorage.getItem('token');
-        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+    let isCurrent = true;
 
-        const [productData, historyData, alertRes] = await Promise.all([
+    const fetchData = async () => {
+      setLoadingProduct(true);
+      setProductError('');
+      setProduct(null);
+      setHistory([]);
+      setSimilarProducts([]);
+      setLoadingSimilar(true);
+
+      try {
+        const [productData, historyData] = await Promise.all([
           fetchProductDetail(id),
-          fetchPriceHistory(id, days),
-          token ? axios.get(`/api/products/${id}/alert`, { headers }) : Promise.resolve({ data: { data: DEFAULT_PRODUCT_ALERT } })
+          fetchPriceHistory(id, DEFAULT_PRICE_HISTORY_DAYS),
         ]);
+
+        if (!isCurrent) return;
+
         setProduct(productData);
         setHistory(historyData);
-
-        const alertData = normalizeProductAlertResponse(alertRes.data.data);
-        setProductAlert(alertData);
-        setAlertPriceInput(alertData.targetPrice ? String(alertData.targetPrice) : '');
-        setAlertFormError('');
-        setAlertFeedback('');
       } catch (err) {
         console.error('데이터 로딩 실패', err);
+        if (!isCurrent) return;
+
+        setProduct(null);
+        setProductError(
+          axios.isAxiosError(err) && err.response?.status === 404
+            ? '상품을 찾을 수 없습니다.'
+            : '상품 정보를 불러오지 못했습니다.'
+        );
+      } finally {
+        if (isCurrent) {
+          setLoadingProduct(false);
+        }
       }
     };
+
     fetchData();
-  }, [id, days]);
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [id]);
 
   useEffect(() => {
-    if (!id) return;
+    if (!id || !product) {
+      setLoadingSimilar(false);
+      return;
+    }
+
+    let isCurrent = true;
 
     const loadSimilarProducts = async () => {
       setLoadingSimilar(true);
       try {
-        setSimilarProducts(await fetchSimilarProducts(id));
+        const products = await fetchSimilarProducts(id);
+        if (isCurrent) {
+          setSimilarProducts(products);
+        }
       } catch (error) {
         console.error('Failed to fetch similar products:', error);
+        if (isCurrent) {
+          setSimilarProducts([]);
+        }
       } finally {
-        setLoadingSimilar(false);
+        if (isCurrent) {
+          setLoadingSimilar(false);
+        }
       }
     };
 
     loadSimilarProducts();
-  }, [id]);
 
-  const openAlertModal = () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
+    return () => {
+      isCurrent = false;
+    };
+  }, [id, product]);
 
-    setAlertPriceInput(productAlert.targetPrice ? String(productAlert.targetPrice) : '');
-    setAlertFormError('');
-    setAlertFeedback('');
-    setIsAlertModalOpen(true);
-  };
+  if (loadingProduct) return <div className="loading">불러오는 중...</div>;
 
-  const closeAlertModal = () => {
-    if (savingAlert) return;
-    setIsAlertModalOpen(false);
-    setAlertFormError('');
-  };
-
-  const submitAlert = async (event: FormEvent) => {
-    event.preventDefault();
-
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
-    const parsedPrice = parseInt(alertPriceInput.replace(/[^0-9]/g, ''), 10);
-    if (Number.isNaN(parsedPrice) || parsedPrice <= 0) {
-      setAlertFormError('목표가를 숫자로 입력해주세요.');
-      return;
-    }
-
-    setSavingAlert(true);
-    setAlertFormError('');
-    try {
-      const res = await axios.post(
-        `/api/products/${id}/alert`,
-        createProductAlertRequest(parsedPrice),
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const nextAlert = normalizeProductAlertResponse(res.data.data);
-      setProductAlert(nextAlert);
-      setAlertPriceInput(nextAlert.targetPrice ? String(nextAlert.targetPrice) : '');
-      setIsAlertModalOpen(false);
-      setAlertFeedback(nextAlert.targetPrice
-        ? `${nextAlert.targetPrice.toLocaleString()}원 이하가 되면 알려드릴게요.`
-        : '목표가 알림이 해제되었습니다.');
-    } catch (err) {
-      console.error('알림 설정 실패', err);
-      setAlertFormError('알림 설정 중 오류가 발생했습니다.');
-    } finally {
-      setSavingAlert(false);
-    }
-  };
-
-  const clearAlert = async () => {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      navigate('/login');
-      return;
-    }
-
-    setSavingAlert(true);
-    setAlertFormError('');
-    try {
-      const res = await axios.post(
-        `/api/products/${id}/alert`,
-        createProductAlertRequest(null),
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      const nextAlert = normalizeProductAlertResponse(res.data.data);
-      setProductAlert(nextAlert);
-      setAlertPriceInput('');
-      setIsAlertModalOpen(false);
-      setAlertFeedback('목표가 알림이 해제되었습니다.');
-    } catch (err) {
-      console.error('알림 해제 실패', err);
-      setAlertFormError('알림 해제 중 오류가 발생했습니다.');
-    } finally {
-      setSavingAlert(false);
-    }
-  };
-
-  if (!product) return <div className="loading">불러오는 중...</div>;
+  if (productError || !product) {
+    return (
+      <section className="page-state">
+        <p className="page-state-kicker">상품 상세</p>
+        <h1>{productError || '상품 정보를 찾을 수 없습니다.'}</h1>
+        <p>상품이 삭제되었거나 일시적으로 정보를 가져오지 못했습니다.</p>
+        <button type="button" className="page-state-primary" onClick={() => navigate('/')}>
+          홈으로 돌아가기
+        </button>
+      </section>
+    );
+  }
 
   const priceDiff = (product.currentPrice || 0) - (product.lowestPrice || 0);
 
@@ -279,10 +232,6 @@ function ProductDetail() {
       <div className="chart-section-pc">
         <div className="chart-header-pc">
           <h2>가격 변동 추이</h2>
-          <div className="chart-period">
-            <button className={`period-btn ${days === 30 ? 'active' : ''}`} onClick={() => setDays(30)}>1개월</button>
-            <button className={`period-btn ${days === 90 ? 'active' : ''}`} onClick={() => setDays(90)}>3개월</button>
-          </div>
         </div>
         <div className="chart-wrap">
           <Line data={chartData} options={chartOptions} />
@@ -317,66 +266,7 @@ function ProductDetail() {
         </div>
       )}
 
-      {alertFeedback && (
-        <div className="detail-toast" role="status">
-          {alertFeedback}
-        </div>
-      )}
-
-      {isAlertModalOpen && product && (
-        <div className="alert-modal-backdrop" role="dialog" aria-modal="true">
-          <form className="alert-modal" onSubmit={submitAlert}>
-            <div className="alert-modal-header">
-              <h2>목표가 알림 설정</h2>
-              <button type="button" className="alert-modal-close" onClick={closeAlertModal} disabled={savingAlert}>
-                ×
-              </button>
-            </div>
-            <div className="alert-modal-body">
-              <div className="alert-current-price">
-                <span>현재가</span>
-                <strong>{product.currentPrice.toLocaleString()}원</strong>
-              </div>
-              <label className="alert-price-field">
-                <span>목표가</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={alertPriceInput}
-                  onChange={(event) => setAlertPriceInput(event.target.value)}
-                  placeholder="예: 12000"
-                  disabled={savingAlert}
-                />
-              </label>
-              {alertFormError && <p className="alert-form-error">{alertFormError}</p>}
-            </div>
-            <div className="alert-modal-actions">
-              {productAlert.isAlertSet && (
-                <button type="button" className="alert-clear-btn" onClick={clearAlert} disabled={savingAlert}>
-                  알림 해제
-                </button>
-              )}
-              <button type="submit" className="alert-save-btn" disabled={savingAlert}>
-                {savingAlert ? '저장 중...' : productAlert.isAlertSet ? '목표가 변경' : '알림 설정'}
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
       <div className="detail-bottom-fixed detail-actions">
-        <button
-          onClick={openAlertModal}
-          className={`btn-alert-bottom ${productAlert.isAlertSet ? 'active' : ''}`}
-        >
-          <div className="btn-alert-main">
-            {productAlert.isAlertSet ? <BellRing size={20} /> : <Bell size={20} />}
-            <span>{productAlert.isAlertSet ? '목표가 알림 중' : '목표가 알림'}</span>
-          </div>
-          {productAlert.isAlertSet && productAlert.targetPrice && (
-            <span className="btn-alert-sub">({productAlert.targetPrice.toLocaleString()}원 이하)</span>
-          )}
-        </button>
         <a
           href={product.productUrl}
           target="_blank"

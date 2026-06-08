@@ -27,13 +27,19 @@ spring:
         dialect: org.hibernate.dialect.MySQL8Dialect
 
 jwt:
-  secret: ${JWT_SECRET:your_jwt_secret_key_must_be_at_least_256_bits}
+  secret: ${JWT_SECRET:}
   expiration: 86400000  # 24시간 (ms)
 
 kakao:
   client-id: ${KAKAO_CLIENT_ID:your_kakao_client_id}
   client-secret: ${KAKAO_CLIENT_SECRET:your_kakao_client_secret}
   redirect-uri: ${KAKAO_REDIRECT_URI:your_callback_url}
+
+app:
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+
+features:
+  kakao-auth: ${FEATURE_KAKAO_AUTH:false}
 
 crawler:
   internal-token: ${CRAWLER_INTERNAL_TOKEN:}

@@ -17,6 +17,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @SpringBootTest
@@ -45,6 +46,27 @@ class SecurityAuthorizationTest {
 
         mockMvc.perform(get("/api/products/stats"))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("응답에는 클릭재킹 방어를 위한 frame options 헤더가 포함된다")
+    void responsesIncludeFrameOptionsHeader() throws Exception {
+        when(productService.getStats()).thenReturn(Map.of(
+                "total", 0L,
+                "onSale", 0L,
+                "atLowest", 0L
+        ));
+
+        mockMvc.perform(get("/api/products/stats"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Frame-Options", "SAMEORIGIN"));
+    }
+
+    @Test
+    @DisplayName("배포 브랜치 기본 설정에서는 카카오 로그인 URL을 열지 않는다")
+    void kakaoAuthUrlIsDisabledByDefault() throws Exception {
+        mockMvc.perform(get("/api/kakao/auth-url"))
+                .andExpect(status().isForbidden());
     }
 
     @Test

@@ -2,7 +2,7 @@ spring:
   datasource:
     url: jdbc:mysql://localhost:3306/oliveyoung_tracker?serverTimezone=Asia/Seoul&characterEncoding=UTF-8
     username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:your_db_password}
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   data:
@@ -27,13 +27,19 @@ spring:
         dialect: org.hibernate.dialect.MySQL8Dialect
 
 jwt:
-  secret: ${JWT_SECRET:your-secret-key-must-be-at-least-256-bits-long-for-hs256}
+  secret: ${JWT_SECRET:}
   expiration: 86400000  # 24시간 (ms)
 
 kakao:
   client-id: ${KAKAO_CLIENT_ID:your_kakao_client_id}
   client-secret: ${KAKAO_CLIENT_SECRET:}
   redirect-uri: ${KAKAO_REDIRECT_URI:http://localhost:8080/api/kakao/callback}
+
+app:
+  frontend-base-url: ${FRONTEND_BASE_URL:http://localhost:5173}
+
+features:
+  kakao-auth: ${FEATURE_KAKAO_AUTH:false}
 
 crawler:
   internal-token: ${CRAWLER_INTERNAL_TOKEN:}

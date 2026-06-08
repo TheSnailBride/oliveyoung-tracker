@@ -27,7 +27,7 @@ function Login() {
         <div className="kakao-login-form">
           <div className="auth-logo">🌿</div>
           <h2>로그인</h2>
-          <p className="auth-desc">간편하게 로그인하고<br/>원하는 가격이 되면 알림을 받아보세요!</p>
+          <p className="auth-desc">간편하게 로그인하고<br/>내 쇼핑 정보를 이어서 확인하세요.</p>
           
           <button className="btn-kakao-login" onClick={handleKakaoLogin}>
             <img src="https://developers.kakao.com/assets/img/lib/logos/kakaolink/kakaolink_btn_medium.png" alt="" />

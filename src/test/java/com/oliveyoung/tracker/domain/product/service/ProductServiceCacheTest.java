@@ -1,9 +1,7 @@
 package com.oliveyoung.tracker.domain.product.service;
 
 import com.oliveyoung.tracker.domain.product.repository.PriceHistoryRepository;
-import com.oliveyoung.tracker.domain.product.repository.ProductAlertRepository;
 import com.oliveyoung.tracker.domain.product.repository.ProductRepository;
-import com.oliveyoung.tracker.domain.user.repository.UserRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.cache.CacheManager;
@@ -16,6 +14,8 @@ import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,17 +32,17 @@ class ProductServiceCacheTest {
     @Test
     @DisplayName("상품 통계는 반복 조회 시 캐시를 사용한다")
     void getStatsUsesCacheForRepeatedCalls() {
-        when(productRepository.count()).thenReturn(100L);
-        when(productRepository.countByIsSaleTrue()).thenReturn(30L);
-        when(productRepository.countAtLowestPrice(2)).thenReturn(10L);
+        when(productRepository.countByIsSoldOutFalseAndLastSeenAtGreaterThanEqual(any())).thenReturn(100L);
+        when(productRepository.countByIsSaleTrueAndIsSoldOutFalseAndLastSeenAtGreaterThanEqual(any())).thenReturn(30L);
+        when(productRepository.countAtLowestPrice(eq(2L), any())).thenReturn(10L);
 
         Map<String, Long> first = productService.getStats();
         Map<String, Long> second = productService.getStats();
 
         assertThat(first).isEqualTo(second);
-        verify(productRepository).count();
-        verify(productRepository).countByIsSaleTrue();
-        verify(productRepository).countAtLowestPrice(2);
+        verify(productRepository).countByIsSoldOutFalseAndLastSeenAtGreaterThanEqual(any());
+        verify(productRepository).countByIsSaleTrueAndIsSoldOutFalseAndLastSeenAtGreaterThanEqual(any());
+        verify(productRepository).countAtLowestPrice(eq(2L), any());
     }
 
     @Configuration
@@ -64,14 +64,5 @@ class ProductServiceCacheTest {
             return mock(PriceHistoryRepository.class);
         }
 
-        @Bean
-        ProductAlertRepository productAlertRepository() {
-            return mock(ProductAlertRepository.class);
-        }
-
-        @Bean
-        UserRepository userRepository() {
-            return mock(UserRepository.class);
-        }
     }
 }
