@@ -5,6 +5,7 @@ import com.oliveyoung.tracker.domain.user.service.KakaoService;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -19,6 +20,9 @@ import java.util.Map;
 public class KakaoAuthController {
 
     private final KakaoService kakaoService;
+
+    @Value("${app.frontend-base-url:http://localhost:5173}")
+    private String frontendBaseUrl;
 
     /**
      * 카카오 로그인 URL 반환
@@ -40,18 +44,21 @@ public class KakaoAuthController {
             HttpServletResponse response) throws IOException {
 
         if (error != null) {
-            response.sendRedirect("http://localhost:5173/login?error=kakao_denied");
+            response.sendRedirect(frontendUrl("/login?error=kakao_denied"));
             return;
         }
 
         try {
             String jwt = kakaoService.loginOrRegister(code);
-            // 리액트 개발 서버로 리다이렉트하며 토큰 전달
-            String redirectUrl = "http://localhost:5173/?token=" + URLEncoder.encode(jwt, StandardCharsets.UTF_8);
+            String redirectUrl = frontendUrl("/?token=" + URLEncoder.encode(jwt, StandardCharsets.UTF_8));
             response.sendRedirect(redirectUrl);
         } catch (Exception e) {
             log.error("카카오 로그인 실패 - type: {}, message: {}", e.getClass().getSimpleName(), e.getMessage(), e);
-            response.sendRedirect("http://localhost:5173/login?error=kakao_failed");
+            response.sendRedirect(frontendUrl("/login?error=kakao_failed"));
         }
+    }
+
+    private String frontendUrl(String path) {
+        return frontendBaseUrl.replaceAll("/+$", "") + path;
     }
 }

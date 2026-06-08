@@ -96,6 +96,20 @@ class CrawlerSchedulerTest {
                 .isEqualTo("test-crawler-token");
     }
 
+    @Test
+    @DisplayName("파이썬 크롤러 프로세스에는 서버 포트를 환경 변수로 전달한다")
+    void crawlerProcessReceivesServerPortEnvironmentVariable() {
+        ExposedProcessBuilderCrawlerScheduler scheduler = new ExposedProcessBuilderCrawlerScheduler(
+                new InMemoryCrawlerRunLock()
+        );
+        ReflectionTestUtils.setField(scheduler, "serverPort", "18080");
+
+        ProcessBuilder processBuilder = scheduler.exposeProcessBuilder();
+
+        assertThat(processBuilder.environment().get("SERVER_PORT"))
+                .isEqualTo("18080");
+    }
+
     private CrawledProduct product(String oliveYoungId, int currentPrice) {
         return CrawledProduct.builder()
                 .oliveYoungId(oliveYoungId)

@@ -7,7 +7,8 @@ import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "price_histories", indexes = {
-        @Index(name = "idx_product_recorded", columnList = "product_id, recordedAt")
+        @Index(name = "idx_product_recorded", columnList = "product_id, recordedAt"),
+        @Index(name = "idx_price_history_product_price", columnList = "product_id, currentPrice")
 })
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

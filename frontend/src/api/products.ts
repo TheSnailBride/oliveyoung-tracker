@@ -6,6 +6,8 @@ import {
   type CategoryGroup,
 } from '../constants/categories.ts';
 
+export const DEFAULT_PRICE_HISTORY_DAYS = 30;
+
 export interface Product {
   id: number;
   name: string;
@@ -91,6 +93,16 @@ export async function fetchAtLowestProducts(size = 10): Promise<Product[]> {
 export async function fetchTopDiscountedProducts(size = 10): Promise<Product[]> {
   const response = await axios.get('/api/products/top-discounted', { params: { size } });
   return response.data.data.content;
+}
+
+export async function fetchPriceDroppedProducts(categories?: string, size = 9): Promise<Product[]> {
+  const response = await axios.get('/api/products/price-drops', {
+    params: {
+      categories,
+      size,
+    },
+  });
+  return response.data.data;
 }
 
 export async function fetchProducts(filters: ProductSearchFilters): Promise<PageData> {

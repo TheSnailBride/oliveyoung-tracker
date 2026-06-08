@@ -13,7 +13,6 @@ public class ProductMaintenanceScheduler {
 
     @Scheduled(cron = "${product.maintenance.cron:0 30 3 * * *}", zone = "${product.maintenance.zone:Asia/Seoul}")
     public void runDailyMaintenance() {
-        productMaintenanceService.deleteExpiredProductAlerts();
         productMaintenanceService.markStaleProductsAsSoldOut();
     }
 }

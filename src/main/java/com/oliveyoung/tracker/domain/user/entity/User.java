@@ -4,8 +4,6 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 @Entity
 @Table(name = "users")
@@ -53,26 +51,11 @@ public class User {
         if (this.role == null) this.role = Role.USER;
     }
 
-    public boolean hasKakaoLinked() {
-        return this.kakaoAccessToken != null;
-    }
-
-    public boolean isKakaoTokenExpired() {
-        return this.kakaoTokenExpiresAt != null && LocalDateTime.now().isAfter(this.kakaoTokenExpiresAt);
-    }
-
     public void updateKakaoToken(String kakaoId, String accessToken, String refreshToken, LocalDateTime expiresAt) {
         this.kakaoId = kakaoId;
         this.kakaoAccessToken = accessToken;
         this.kakaoRefreshToken = refreshToken;
         this.kakaoTokenExpiresAt = expiresAt;
-    }
-
-    public void unlinkKakao() {
-        this.kakaoId = null;
-        this.kakaoAccessToken = null;
-        this.kakaoRefreshToken = null;
-        this.kakaoTokenExpiresAt = null;
     }
 
     public enum Role {

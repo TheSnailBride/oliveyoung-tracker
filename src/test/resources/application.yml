@@ -11,7 +11,7 @@ spring:
     hibernate:
       ddl-auto: create-drop
 jwt:
-  secret: your-secret-key-must-be-at-least-256-bits-long-for-hs256
+  secret: test-jwt-secret-for-spring-context-256-bits-long
   expiration: 86400000
 kakao:
   client-id: test-id

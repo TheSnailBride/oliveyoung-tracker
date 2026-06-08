@@ -4,7 +4,9 @@ import axios from 'axios';
 
 import { CATEGORY_GROUPS } from '../src/constants/categories.ts';
 import {
+  DEFAULT_PRICE_HISTORY_DAYS,
   buildProductSearchParams,
+  fetchPriceDroppedProducts,
   fetchPriceHistory,
   fetchProductDetail,
   fetchSimilarProducts,
@@ -107,6 +109,44 @@ test('fetches price history with a days query parameter', async () => {
 
     assert.equal(result[0].currentPrice, 9000);
     assert.deepEqual(calls, [{ url: '/api/products/10/prices', config: { params: { days: 90 } } }]);
+  } finally {
+    axios.get = originalGet;
+  }
+});
+
+test('uses a 30 day default window for product detail price history', () => {
+  assert.equal(DEFAULT_PRICE_HISTORY_DAYS, 30);
+});
+
+test('fetches price dropped products with category group params', async () => {
+  const originalGet = axios.get;
+  const calls: Array<{ url: string; config?: unknown }> = [];
+
+  axios.get = async (url: string, config?: unknown) => {
+    calls.push({ url, config });
+    return {
+      data: {
+        data: [
+          {
+            id: 12,
+            name: '가격하락 상품',
+            brand: '테스트 브랜드',
+            currentPrice: 8000,
+            originalPrice: 10000,
+            discountRate: 20,
+            imageUrl: 'https://example.com/drop.jpg',
+            isSale: true,
+          },
+        ],
+      },
+    };
+  };
+
+  try {
+    const result = await fetchPriceDroppedProducts('스킨/토너,크림', 9);
+
+    assert.equal(result[0].id, 12);
+    assert.deepEqual(calls, [{ url: '/api/products/price-drops', config: { params: { categories: '스킨/토너,크림', size: 9 } } }]);
   } finally {
     axios.get = originalGet;
   }

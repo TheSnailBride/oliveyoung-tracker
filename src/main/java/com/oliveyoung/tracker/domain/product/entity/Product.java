@@ -79,14 +79,19 @@ public class Product {
         this.isSoldOut = isSoldOut != null ? isSoldOut : false;
     }
 
-    public void updateInfo(String name, String brand, String imageUrl, String productUrl) {
-        this.name = name;
-        this.brand = brand;
-        this.imageUrl = imageUrl;
-        this.productUrl = productUrl;
+    public void updateInfo(String name, String brand, String category, String imageUrl, String productUrl) {
+        if (hasText(name)) this.name = name;
+        if (hasText(brand)) this.brand = brand;
+        if (hasText(category)) this.category = category;
+        if (hasText(imageUrl)) this.imageUrl = imageUrl;
+        if (hasText(productUrl)) this.productUrl = productUrl;
     }
 
     public void markSeen() {
         this.lastSeenAt = LocalDateTime.now();
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

@@ -38,7 +38,6 @@ public class KakaoService {
 
     private static final String TOKEN_URL    = "https://kauth.kakao.com/oauth/token";
     private static final String USER_INFO_URL = "https://kapi.kakao.com/v2/user/me";
-    private static final String MESSAGE_URL  = "https://kapi.kakao.com/v2/api/talk/memo/default/send";
     private static final String AUTH_URL     = "https://kauth.kakao.com/oauth/authorize";
 
     /**
@@ -56,7 +55,7 @@ public class KakaoService {
      */
     @Transactional
     public String loginOrRegister(String code) {
-        log.info("카카오 로그인 처리 시작 - code: {}", code);
+        log.info("카카오 로그인 처리 시작");
 
         // 1. 인가 코드로 카카오 토큰 발급 요청
         KakaoTokenResponse tokenResponse = exchangeCodeForToken(code);
@@ -119,8 +118,8 @@ public class KakaoService {
             params.add("client_secret", secret);
         }
         
-        log.info("[카카오 토큰 요청 전송] URL: {}, clientId: {}, redirectUri: {}, useSecret: {}", 
-                TOKEN_URL, clientId.trim(), redirectUri.trim(), useSecret);
+        log.info("[카카오 토큰 요청 전송] URL: {}, redirectUri: {}, useSecret: {}",
+                TOKEN_URL, redirectUri.trim(), useSecret);
 
         HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
         try {
@@ -149,86 +148,4 @@ public class KakaoService {
         return response.getBody();
     }
 
-    /**
-     * 카카오 나에게 메시지 보내기
-     */
-    @Transactional
-    public void sendMessageToMe(User user, String text) {
-        if (!user.hasKakaoLinked()) {
-            log.warn("카카오 미연동 유저 - userId: {}", user.getId());
-            return;
-        }
-
-        String accessToken = getValidAccessToken(user);
-        if (accessToken == null) {
-            log.warn("카카오 토큰 갱신 실패 - userId: {}", user.getId());
-            return;
-        }
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-        headers.setBearerAuth(accessToken);
-
-        String templateObject = "{\"object_type\":\"text\","
-                + "\"text\":\"" + escapeJson(text) + "\","
-                + "\"link\":{\"web_url\":\"https://www.oliveyoung.co.kr\","
-                + "\"mobile_web_url\":\"https://www.oliveyoung.co.kr\"}}";
-
-        MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-        params.add("template_object", templateObject);
-
-        HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
-
-        try {
-            restTemplate.postForEntity(MESSAGE_URL, request, String.class);
-            log.info("카카오 메시지 발송 완료 - userId: {}", user.getId());
-        } catch (Exception e) {
-            log.error("카카오 메시지 발송 실패 - userId: {}, error: {}", user.getId(), e.getMessage());
-        }
-    }
-
-    @Transactional
-    public String getValidAccessToken(User user) {
-        if (!user.isKakaoTokenExpired()) {
-            return user.getKakaoAccessToken();
-        }
-
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
-
-            MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
-            params.add("grant_type", "refresh_token");
-            params.add("client_id", clientId);
-            params.add("refresh_token", user.getKakaoRefreshToken());
-            if (clientSecret != null && !clientSecret.isBlank()) {
-                params.add("client_secret", clientSecret);
-            }
-
-            HttpEntity<MultiValueMap<String, String>> request = new HttpEntity<>(params, headers);
-            ResponseEntity<KakaoTokenResponse> response =
-                    restTemplate.postForEntity(TOKEN_URL, request, KakaoTokenResponse.class);
-
-            KakaoTokenResponse tokenResponse = response.getBody();
-            if (tokenResponse == null) return null;
-
-            LocalDateTime expiresAt = LocalDateTime.now().plusSeconds(tokenResponse.getExpiresIn());
-            String newRefresh = tokenResponse.getRefreshToken() != null
-                    ? tokenResponse.getRefreshToken()
-                    : user.getKakaoRefreshToken();
-
-            user.updateKakaoToken(user.getKakaoId(), tokenResponse.getAccessToken(), newRefresh, expiresAt);
-            return tokenResponse.getAccessToken();
-
-        } catch (Exception e) {
-            log.error("카카오 토큰 갱신 실패 - userId: {}, error: {}", user.getId(), e.getMessage());
-            return null;
-        }
-    }
-
-    private String escapeJson(String text) {
-        return text.replace("\\", "\\\\")
-                   .replace("\"", "\\\"")
-                   .replace("\n", "\\n");
-    }
 }

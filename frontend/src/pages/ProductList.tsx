@@ -1,38 +1,31 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 import {
   fetchAtLowestProducts,
+  fetchPriceDroppedProducts,
   fetchProductStats,
-  fetchProducts,
   fetchTopDiscountedProducts,
-  type PageData,
   type Product,
   type Stats,
 } from '../api/products';
-import CategoryFilter from '../components/CategoryFilter';
-import Pagination from '../components/Pagination';
 import ProductCard from '../components/ProductCard';
 import ProductRail from '../components/ProductRail';
-import { useProductFilters } from '../hooks/useProductFilters';
+import { ALL_CATEGORY_LABEL, CATEGORY_GROUPS, getCategoriesParamForGroup } from '../constants/categories';
+import { buildSearchResultsPath } from '../utils/searchRoutes';
+
+const HOME_PRICE_DROP_SIZE = 9;
 
 function ProductList() {
+  const navigate = useNavigate();
   const [lowestProducts, setLowestProducts] = useState<Product[]>([]);
   const [topDiscounted, setTopDiscounted] = useState<Product[]>([]);
-  const [allProductsPage, setAllProductsPage] = useState<PageData | null>(null);
+  const [priceDroppedProducts, setPriceDroppedProducts] = useState<Product[]>([]);
+  const [selectedCategoryGroup, setSelectedCategoryGroup] = useState('');
+  const [loadingPriceDrops, setLoadingPriceDrops] = useState(false);
   const [stats, setStats] = useState<Stats>({ total: 0, onSale: 0, atLowest: 0 });
-
-  const {
-    currentPage,
-    keywordParam,
-    categoryParam,
-    selectedGroup,
-    keywordInput,
-    setKeywordInput,
-    submitSearch,
-    changePage,
-    changeGroup,
-    changeCategory,
-  } = useProductFilters();
+  const [heroKeyword, setHeroKeyword] = useState('');
+  const priceDropRequestId = useRef(0);
 
   const fetchInitialData = useCallback(async () => {
     try {
@@ -50,34 +43,50 @@ function ProductList() {
     }
   }, []);
 
-  const fetchAllProducts = useCallback(async () => {
-    try {
-      const productPage = await fetchProducts({
-        page: currentPage,
-        keyword: keywordParam,
-        category: categoryParam,
-        selectedGroup,
-      });
+  const fetchPriceDrops = useCallback(async () => {
+    const requestId = priceDropRequestId.current + 1;
+    priceDropRequestId.current = requestId;
+    const selectedGroup = CATEGORY_GROUPS.find(group => group.name === selectedCategoryGroup);
+    const categories = getCategoriesParamForGroup(selectedGroup);
 
-      setAllProductsPage(productPage);
+    setLoadingPriceDrops(true);
+    try {
+      const products = await fetchPriceDroppedProducts(categories, HOME_PRICE_DROP_SIZE);
+
+      if (requestId === priceDropRequestId.current) {
+        setPriceDroppedProducts(products);
+      }
     } catch (err) {
       console.error(err);
+    } finally {
+      if (requestId === priceDropRequestId.current) {
+        setLoadingPriceDrops(false);
+      }
     }
-  }, [categoryParam, currentPage, keywordParam, selectedGroup]);
+  }, [selectedCategoryGroup]);
+
+  const submitSearch = useCallback((event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const path = buildSearchResultsPath(heroKeyword);
+    if (path) {
+      navigate(path);
+    }
+  }, [heroKeyword, navigate]);
 
   useEffect(() => {
     fetchInitialData();
   }, [fetchInitialData]);
 
   useEffect(() => {
-    fetchAllProducts();
-  }, [fetchAllProducts]);
+    fetchPriceDrops();
+  }, [fetchPriceDrops]);
 
   return (
     <>
       <section className="hero">
-        <h1>올리브영 가격 추적기</h1>
-        <p>세일 기간 "가격 장난질"에 속지 마세요.</p>
+        <h1>한 번만 확인해도 달라지는 쇼핑 습관</h1>
+        <p>가격하락 상품을 카테고리별로 확인해보세요</p>
 
         <form className="hero-search" onSubmit={submitSearch}>
           <div className="search-input-wrap">
@@ -85,8 +94,8 @@ function ProductList() {
             <input
               type="text"
               placeholder="상품명 또는 브랜드 검색"
-              value={keywordInput}
-              onChange={(event) => setKeywordInput(event.target.value)}
+              value={heroKeyword}
+              onChange={(event) => setHeroKeyword(event.target.value)}
             />
           </div>
           <button type="submit">검색</button>
@@ -110,30 +119,55 @@ function ProductList() {
           title="🔥 오늘의 대란템"
           description="할인율 Top 10"
           products={topDiscounted}
-          showOriginalPrice
         />
 
-        <section className="home-section" id="all-products-section">
+        <section className="home-section" id="price-drop-section">
           <div className="section-header" style={{ marginBottom: '10px' }}>
-            <h2 className="section-title">✨ 전체 상품</h2>
+            <h2 className="section-title">📉 카테고리별 가격하락 상품</h2>
+            <span className="section-desc">대분류를 눌러 확인</span>
           </div>
 
-          <CategoryFilter
-            category={categoryParam}
-            selectedGroup={selectedGroup}
-            onGroupChange={changeGroup}
-            onCategoryChange={changeCategory}
-          />
-
-          <div className="product-grid">
-            {allProductsPage?.content.map(product => (
-              <ProductCard key={product.id} product={product} />
+          <div className="home-category-tabs">
+            <button
+              type="button"
+              onClick={() => setSelectedCategoryGroup('')}
+              className={`home-category-tab ${selectedCategoryGroup === '' ? 'active' : ''}`}
+            >
+              {ALL_CATEGORY_LABEL}
+            </button>
+            {CATEGORY_GROUPS.map(group => (
+              <button
+                type="button"
+                key={group.name}
+                onClick={() => setSelectedCategoryGroup(group.name)}
+                className={`home-category-tab ${selectedCategoryGroup === group.name ? 'active' : ''}`}
+              >
+                {group.name}
+              </button>
             ))}
           </div>
 
-          {allProductsPage && (
-            <Pagination page={allProductsPage} onPageChange={changePage} />
-          )}
+          <div className="price-drop-content" aria-busy={loadingPriceDrops}>
+            {loadingPriceDrops && priceDroppedProducts.length === 0 && (
+              <div className="loading">가격하락 상품을 불러오는 중...</div>
+            )}
+
+            {!loadingPriceDrops && priceDroppedProducts.length === 0 && (
+              <div className="empty-state">아직 보여줄 가격하락 상품이 없습니다.</div>
+            )}
+
+            {priceDroppedProducts.length > 0 && (
+              <div className={`home-price-drop-grid ${loadingPriceDrops ? 'is-loading' : ''}`}>
+                {priceDroppedProducts.map(product => (
+                  <ProductCard key={product.id} product={product} />
+                ))}
+              </div>
+            )}
+
+            {loadingPriceDrops && priceDroppedProducts.length > 0 && (
+              <div className="price-drop-loading-pill">불러오는 중...</div>
+            )}
+          </div>
         </section>
       </div>
     </>

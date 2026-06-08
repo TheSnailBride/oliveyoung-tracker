@@ -31,6 +31,9 @@ public class SecurityConfig {
     @Value("${crawler.internal-token:}")
     private String crawlerInternalToken;
 
+    @Value("${features.kakao-auth:false}")
+    private boolean kakaoAuthEnabled;
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
@@ -39,18 +42,21 @@ public class SecurityConfig {
                 session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/", "/*.html", "/css/**", "/js/**", "/images/**").permitAll()
-                .requestMatchers("/api/kakao/auth-url").permitAll()
-                .requestMatchers("/api/kakao/callback").permitAll()
+                .requestMatchers("/api/kakao/**").access(featureAccess(kakaoAuthEnabled))
                 .requestMatchers(HttpMethod.POST, "/api/crawler/run").access(crawlerInternalAccess())
                 .requestMatchers(HttpMethod.GET, "/api/products/all-for-crawler").access(crawlerInternalAccess())
                 .requestMatchers("/api/crawler/**").access(crawlerInternalAccess())
                 .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
                 .anyRequest().authenticated()
             )
-            .headers(headers -> headers.frameOptions(f -> f.disable()))
+            .headers(headers -> headers.frameOptions(f -> f.sameOrigin()))
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    private AuthorizationManager<RequestAuthorizationContext> featureAccess(boolean enabled) {
+        return (authentication, context) -> new AuthorizationDecision(enabled);
     }
 
     private AuthorizationManager<RequestAuthorizationContext> crawlerInternalAccess() {

@@ -83,12 +83,49 @@ class CrawlerProductIngestionServiceTest {
         assertThat(secondSeen.getLastSeenAt()).isAfterOrEqualTo(firstSeen.getLastSeenAt());
     }
 
+    @Test
+    @DisplayName("기존 상품이 더모 카테고리에서 다시 발견되면 카테고리를 더모 카테고리로 갱신한다")
+    void saveCrawledProductsUpdatesExistingProductCategory() {
+        ingestionService.saveCrawledProducts(List.of(productWithCategory("A001", 10_000, "스킨/토너")));
+
+        ingestionService.saveCrawledProducts(List.of(productWithCategory("A001", 9_000, "더모_스킨케어")));
+
+        Product product = productRepository.findByOliveYoungId("A001").orElseThrow();
+        assertThat(product.getCategory()).isEqualTo("더모_스킨케어");
+    }
+
+    @Test
+    @DisplayName("기존 상품을 가격만 담긴 결과로 갱신해도 상품 기본 정보는 지우지 않는다")
+    void saveCrawledProductsPreservesExistingInfoWhenCrawledInfoIsMissing() {
+        ingestionService.saveCrawledProducts(List.of(productWithCategory("A001", 10_000, "더모_스킨케어")));
+
+        ingestionService.saveCrawledProducts(List.of(CrawledProduct.builder()
+                .oliveYoungId("A001")
+                .productUrl("https://example.com/product/A001")
+                .currentPrice(9_000)
+                .originalPrice(10_000)
+                .discountRate(10)
+                .isSale(true)
+                .isSoldOut(false)
+                .build()));
+
+        Product product = productRepository.findByOliveYoungId("A001").orElseThrow();
+        assertThat(product.getName()).isEqualTo("테스트 상품");
+        assertThat(product.getBrand()).isEqualTo("테스트 브랜드");
+        assertThat(product.getCategory()).isEqualTo("더모_스킨케어");
+        assertThat(product.getImageUrl()).isEqualTo("https://example.com/image.jpg");
+    }
+
     private CrawledProduct product(String oliveYoungId, int currentPrice) {
+        return productWithCategory(oliveYoungId, currentPrice, "테스트 카테고리");
+    }
+
+    private CrawledProduct productWithCategory(String oliveYoungId, int currentPrice, String category) {
         return CrawledProduct.builder()
                 .oliveYoungId(oliveYoungId)
                 .name("테스트 상품")
                 .brand("테스트 브랜드")
-                .category("테스트 카테고리")
+                .category(category)
                 .imageUrl("https://example.com/image.jpg")
                 .productUrl("https://example.com/product/" + oliveYoungId)
                 .currentPrice(currentPrice)
