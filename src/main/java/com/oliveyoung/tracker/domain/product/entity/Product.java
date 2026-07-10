@@ -63,6 +63,11 @@ public class Product {
     @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<PriceHistory> priceHistories = new ArrayList<>();
 
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @OrderBy("categoryName ASC")
+    @Builder.Default
+    private List<ProductCategory> productCategories = new ArrayList<>();
+
     @PrePersist
     public void prePersist() {
         this.createdAt = LocalDateTime.now();
@@ -89,6 +94,12 @@ public class Product {
 
     public void markSeen() {
         this.lastSeenAt = LocalDateTime.now();
+    }
+
+    public List<String> getCategoryNames() {
+        return productCategories.stream()
+                .map(ProductCategory::getCategoryName)
+                .toList();
     }
 
     private boolean hasText(String value) {

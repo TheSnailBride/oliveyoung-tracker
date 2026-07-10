@@ -4,6 +4,8 @@ import com.oliveyoung.tracker.domain.product.entity.Product;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.util.List;
+
 @Getter
 @Builder
 public class ProductDetailResponse {
@@ -13,6 +15,7 @@ public class ProductDetailResponse {
     private String name;
     private String brand;
     private String category;
+    private List<String> categories;
     private String imageUrl;
     private String productUrl;
     private Integer currentPrice;
@@ -29,6 +32,7 @@ public class ProductDetailResponse {
                 .name(product.getName())
                 .brand(product.getBrand())
                 .category(product.getCategory())
+                .categories(product.getCategoryNames())
                 .imageUrl(product.getImageUrl())
                 .productUrl(product.getProductUrl())
                 .currentPrice(product.getCurrentPrice())

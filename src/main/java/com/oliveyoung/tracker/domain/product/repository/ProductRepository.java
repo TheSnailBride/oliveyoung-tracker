@@ -1,6 +1,7 @@
 package com.oliveyoung.tracker.domain.product.repository;
 
 import com.oliveyoung.tracker.domain.product.entity.Product;
+import com.oliveyoung.tracker.domain.product.entity.ProductCategory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.domain.Specification;
@@ -50,10 +51,10 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             }
 
             if (category != null) {
-                predicates.add(cb.equal(root.get("category"), category));
+                predicates.add(categoryMatches(root, query, cb, List.of(category)));
             }
             if (categories != null && !categories.isEmpty()) {
-                predicates.add(root.get("category").in(categories));
+                predicates.add(categoryMatches(root, query, cb, categories));
             }
             if (brand != null) {
                 predicates.add(cb.equal(root.get("brand"), brand));
@@ -64,6 +65,21 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
 
             return cb.and(predicates.toArray(jakarta.persistence.criteria.Predicate[]::new));
         };
+    }
+
+    private jakarta.persistence.criteria.Predicate categoryMatches(
+            jakarta.persistence.criteria.Root<Product> root,
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder cb,
+            List<String> categories) {
+        jakarta.persistence.criteria.Subquery<Long> subquery = query.subquery(Long.class);
+        jakarta.persistence.criteria.Root<ProductCategory> categoryRoot = subquery.from(ProductCategory.class);
+        subquery.select(categoryRoot.get("id"))
+                .where(
+                        cb.equal(categoryRoot.get("product"), root),
+                        categoryRoot.get("categoryName").in(categories)
+                );
+        return cb.or(root.get("category").in(categories), cb.exists(subquery));
     }
 
     private List<String> keywordTerms(String keyword) {
@@ -119,7 +135,14 @@ public interface ProductRepository extends JpaRepository<Product, Long>, JpaSpec
             WHERE p.is_sold_out = false
             AND p.current_price IS NOT NULL
             AND p.last_seen_at >= :seenSince
-            AND p.category IN (:categories)
+            AND (
+                p.category IN (:categories)
+                OR EXISTS (
+                    SELECT 1 FROM product_categories pc
+                    WHERE pc.product_id = p.id
+                    AND pc.category_name IN (:categories)
+                )
+            )
             AND ph.max_price > p.current_price
             ORDER BY
                 (ph.max_price - p.current_price) / ph.max_price DESC,

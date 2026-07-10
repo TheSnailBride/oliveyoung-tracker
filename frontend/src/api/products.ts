@@ -17,6 +17,7 @@ export interface Product {
   discountRate: number;
   imageUrl: string;
   isSale: boolean;
+  categories?: string[];
 }
 
 export interface ProductDetailData extends Product {

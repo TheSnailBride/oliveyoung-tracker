@@ -30,6 +30,7 @@ class ScraperCategoryMergeTest(unittest.TestCase):
 
         self.assertEqual(collected["A001"]["category"], "더모_스킨케어")
         self.assertEqual(collected["A001"]["name"], "더모 카테고리 상품")
+        self.assertEqual(collected["A001"]["categories"], ["스킨/토너", "더모_스킨케어"])
 
     def test_general_category_does_not_replace_existing_dermo_category(self):
         collected = {
@@ -48,6 +49,23 @@ class ScraperCategoryMergeTest(unittest.TestCase):
 
         self.assertEqual(collected["A001"]["category"], "더모_스킨케어")
         self.assertEqual(collected["A001"]["name"], "더모 카테고리 상품")
+        self.assertEqual(collected["A001"]["categories"], ["더모_스킨케어", "스킨/토너"])
+
+    def test_categories_are_accumulated_without_duplicates(self):
+        collected = {}
+
+        scraper.merge_collected_product(collected, {
+            "oliveYoungId": "A001",
+            "category": "스킨/토너",
+            "categories": ["스킨/토너"],
+        })
+        scraper.merge_collected_product(collected, {
+            "oliveYoungId": "A001",
+            "category": "크림",
+            "categories": ["크림", "스킨/토너"],
+        })
+
+        self.assertEqual(collected["A001"]["categories"], ["스킨/토너", "크림"])
 
 
 if __name__ == "__main__":

@@ -152,8 +152,32 @@ def merge_collected_product(collected_products, product):
         return
 
     existing_product = collected_products.get(olive_id)
+    candidate_categories = normalize_categories(product)
     if should_replace_collected_product(existing_product, product):
-        collected_products[olive_id] = product
+        existing_categories = normalize_categories(existing_product)
+        replacement = dict(product)
+        replacement["categories"] = list(dict.fromkeys(existing_categories + candidate_categories))
+        collected_products[olive_id] = replacement
+        return
+
+    existing_categories = normalize_categories(existing_product)
+    existing_product["categories"] = list(dict.fromkeys(existing_categories + candidate_categories))
+
+
+def normalize_categories(product):
+    if not product:
+        return []
+
+    categories = product.get("categories") or []
+    if isinstance(categories, str):
+        categories = [categories]
+
+    category = product.get("category")
+    values = list(categories) + ([category] if category else [])
+    return list(dict.fromkeys(
+        value.strip() for value in values
+        if isinstance(value, str) and value.strip()
+    ))
 
 def get_db_products():
     print("[Python Scraper] Fetching existing products from DB...")
@@ -254,6 +278,7 @@ def parse_product_items(items, cat_name):
                 "name": name,
                 "brand": brand,
                 "category": cat_name,
+                "categories": [cat_name],
                 "imageUrl": image_url,
                 "productUrl": product_url,
                 "currentPrice": current_price,

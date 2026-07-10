@@ -2,6 +2,8 @@ package com.oliveyoung.tracker.crawler.dto;
 
 import lombok.*;
 
+import java.util.List;
+
 @Getter
 @Setter
 @Builder
@@ -13,6 +15,7 @@ public class CrawledProduct {
     private String name;
     private String brand;
     private String category;
+    private List<String> categories;
     private String imageUrl;
     private String productUrl;
     private Integer currentPrice;

@@ -3,7 +3,9 @@ package com.oliveyoung.tracker.crawler;
 import com.oliveyoung.tracker.crawler.dto.CrawledProduct;
 import com.oliveyoung.tracker.domain.product.entity.PriceHistory;
 import com.oliveyoung.tracker.domain.product.entity.Product;
+import com.oliveyoung.tracker.domain.product.entity.ProductCategory;
 import com.oliveyoung.tracker.domain.product.repository.PriceHistoryRepository;
+import com.oliveyoung.tracker.domain.product.repository.ProductCategoryRepository;
 import com.oliveyoung.tracker.domain.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.cache.annotation.CacheEvict;
@@ -14,6 +16,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -22,6 +25,7 @@ public class CrawlerProductIngestionService {
 
     private final ProductRepository productRepository;
     private final PriceHistoryRepository priceHistoryRepository;
+    private final ProductCategoryRepository productCategoryRepository;
 
     @Transactional
     @CacheEvict(value = {"products", "topDiscounted", "priceDropped", "atLowest", "stats"}, allEntries = true)
@@ -62,7 +66,7 @@ public class CrawlerProductIngestionService {
                         .oliveYoungId(crawled.getOliveYoungId())
                         .name(crawled.getName())
                         .brand(crawled.getBrand())
-                        .category(crawled.getCategory())
+                        .category(primaryCategory(crawled))
                         .imageUrl(crawled.getImageUrl())
                         .productUrl(crawled.getProductUrl())
                         .currentPrice(crawled.getCurrentPrice())
@@ -73,6 +77,7 @@ public class CrawlerProductIngestionService {
                         .build();
                 productRepository.save(product);
                 existingProducts.put(product.getOliveYoungId(), product);
+                syncCategories(product, crawled);
 
                 saveDailyLowestPriceHistory(product, crawled);
                 savedCount++;
@@ -98,8 +103,9 @@ public class CrawlerProductIngestionService {
         product.updatePrice(crawled.getCurrentPrice(), crawled.getOriginalPrice(),
                 crawled.getDiscountRate(), crawled.getIsSale(), crawled.getIsSoldOut());
         if (updateInfo) {
-            product.updateInfo(crawled.getName(), crawled.getBrand(), crawled.getCategory(),
+            product.updateInfo(crawled.getName(), crawled.getBrand(), primaryCategory(crawled),
                     crawled.getImageUrl(), crawled.getProductUrl());
+            syncCategories(product, crawled);
         }
 
         if (crawled.getCurrentPrice() == null) {
@@ -108,6 +114,41 @@ public class CrawlerProductIngestionService {
 
         saveDailyLowestPriceHistory(product, crawled);
 
+    }
+
+    private String primaryCategory(CrawledProduct crawled) {
+        if (crawled.getCategory() != null && !crawled.getCategory().isBlank()) {
+            return crawled.getCategory();
+        }
+        return crawled.getCategories() == null
+                ? null
+                : crawled.getCategories().stream().filter(Objects::nonNull).map(String::trim)
+                .filter(value -> !value.isBlank()).findFirst().orElse(null);
+    }
+
+    private void syncCategories(Product product, CrawledProduct crawled) {
+        List<String> categories = crawled.getCategories() == null
+                ? List.of()
+                : crawled.getCategories().stream()
+                .filter(Objects::nonNull)
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .toList();
+
+        String primaryCategory = primaryCategory(crawled);
+        if (primaryCategory != null && !categories.contains(primaryCategory)) {
+            categories = java.util.stream.Stream.concat(
+                            java.util.stream.Stream.of(primaryCategory), categories.stream())
+                    .distinct()
+                    .toList();
+        }
+
+        for (String category : categories) {
+            productCategoryRepository.findByProductIdAndCategoryName(product.getId(), category)
+                    .ifPresentOrElse(ProductCategory::markSeen,
+                            () -> productCategoryRepository.save(ProductCategory.of(product, category)));
+        }
     }
 
     private void saveDailyLowestPriceHistory(Product product, CrawledProduct crawled) {

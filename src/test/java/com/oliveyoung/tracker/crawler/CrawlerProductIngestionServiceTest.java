@@ -3,6 +3,7 @@ package com.oliveyoung.tracker.crawler;
 import com.oliveyoung.tracker.crawler.dto.CrawledProduct;
 import com.oliveyoung.tracker.domain.product.entity.PriceHistory;
 import com.oliveyoung.tracker.domain.product.entity.Product;
+import com.oliveyoung.tracker.domain.product.repository.ProductCategoryRepository;
 import com.oliveyoung.tracker.domain.product.repository.PriceHistoryRepository;
 import com.oliveyoung.tracker.domain.product.repository.ProductRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +29,9 @@ class CrawlerProductIngestionServiceTest {
 
     @Autowired
     private PriceHistoryRepository priceHistoryRepository;
+
+    @Autowired
+    private ProductCategoryRepository productCategoryRepository;
 
     @BeforeEach
     void setUp() {
@@ -92,6 +96,32 @@ class CrawlerProductIngestionServiceTest {
 
         Product product = productRepository.findByOliveYoungId("A001").orElseThrow();
         assertThat(product.getCategory()).isEqualTo("더모_스킨케어");
+    }
+
+    @Test
+    @DisplayName("같은 상품이 여러 카테고리에서 발견되면 모든 카테고리를 중복 없이 저장한다")
+    void saveCrawledProductsKeepsAllCategories() {
+        ingestionService.saveCrawledProducts(List.of(CrawledProduct.builder()
+                .oliveYoungId("A001")
+                .name("테스트 상품")
+                .brand("테스트 브랜드")
+                .category("스킨/토너")
+                .categories(List.of("스킨/토너", "더모_스킨케어", "스킨/토너"))
+                .currentPrice(10_000)
+                .originalPrice(10_000)
+                .isSale(false)
+                .isSoldOut(false)
+                .build()));
+
+        Product product = productRepository.findByOliveYoungId("A001").orElseThrow();
+
+        assertThat(productCategoryRepository.findAll())
+                .extracting(category -> category.getCategoryName())
+                .containsExactlyInAnyOrder("스킨/토너", "더모_스킨케어");
+        assertThat(productCategoryRepository.findByProductIdAndCategoryName(product.getId(), "스킨/토너"))
+                .isPresent();
+        assertThat(productCategoryRepository.findByProductIdAndCategoryName(product.getId(), "더모_스킨케어"))
+                .isPresent();
     }
 
     @Test

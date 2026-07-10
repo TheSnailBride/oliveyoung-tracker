@@ -2,6 +2,7 @@ package com.oliveyoung.tracker.domain.product.repository;
 
 import com.oliveyoung.tracker.domain.product.entity.Product;
 import com.oliveyoung.tracker.domain.product.entity.PriceHistory;
+import com.oliveyoung.tracker.domain.product.entity.ProductCategory;
 import org.springframework.data.domain.PageRequest;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,9 @@ class ProductRepositoryTest {
 
     @Autowired
     private PriceHistoryRepository priceHistoryRepository;
+
+    @Autowired
+    private ProductCategoryRepository productCategoryRepository;
 
     @Test
     @DisplayName("같은 브랜드와 카테고리를 가지며 특정 ID가 아닌 상품들을 제한된 개수로 조회한다")
@@ -77,6 +81,18 @@ class ProductRepositoryTest {
         assertThat(productRepository.searchProducts("틴트 아멜리", null, null, null, PageRequest.of(0, 10)))
                 .extracting(Product::getName)
                 .containsExactly("아멜리 나르시시즘 립 틴트");
+    }
+
+    @Test
+    @DisplayName("대표 카테고리가 아니어도 상품에 연결된 카테고리로 검색한다")
+    void searchProductsMatchesSecondaryCategory() {
+        Product product = saveProduct("CATEGORY001", "보조 카테고리 상품", "스킨/토너", 10_000, 10_000, 0, false, false);
+        productCategoryRepository.saveAndFlush(ProductCategory.of(product, "더모_스킨케어"));
+
+        assertThat(productRepository.searchProducts(
+                null, "더모_스킨케어", null, null, PageRequest.of(0, 10)))
+                .extracting(Product::getName)
+                .containsExactly("보조 카테고리 상품");
     }
 
     @Test
