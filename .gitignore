@@ -35,6 +35,9 @@ out/
 .env
 application-prod.yml
 
+### Local database backups ###
+db-backups/
+
 ### Local browser/test artifacts ###
 __pycache__/
 *.py[cod]
